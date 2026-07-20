@@ -8,7 +8,6 @@ to the real drones.
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -64,8 +63,6 @@ class RealRaceCoreEnv:
     This class acts as a generic core implementation of the environment logic that can be reused for
     both single-agent and multi-agent deployments.
     """
-
-    POS_UPDATE_FREQ = 30  # Frequency of position updates to the drone estimator in Hz
 
     def __init__(
         self,
@@ -149,7 +146,6 @@ class RealRaceCoreEnv:
 
         self.drone.connect(timeout=10.0)
         self.drone.reset(arm=True)
-        self._last_drone_pos_update = 0  # Last time a position was sent to the drone estimator
 
         return self.obs(), self.info()
 
@@ -185,11 +181,6 @@ class RealRaceCoreEnv:
         self.data.target_gate[self.data.target_gate >= self.n_gates] = -1
         self.data.last_drone_pos[...] = drone_pos
         self.data.taken_off |= drone_pos[self.rank, 2] > 0.1
-        # Send vicon position updates to the drone at a fixed frequency irrespective of the env freq
-        # Sending too many updates may deteriorate the performance of the drone, hence the limiter
-        if (t := time.perf_counter()) - self._last_drone_pos_update > 1 / self.POS_UPDATE_FREQ:
-            self.drone.send_external_pose()
-            self._last_drone_pos_update = t
         return self.obs(), self.reward(), self.terminated(), self.truncated(), self.info()
 
     def obs(self) -> dict[str, NDArray]:
