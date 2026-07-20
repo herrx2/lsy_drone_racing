@@ -21,8 +21,6 @@ from gymnasium.wrappers.jax_to_numpy import JaxToNumpy
 from lsy_drone_racing.utils import load_config, load_controller
 
 if TYPE_CHECKING:
-    from ml_collections import ConfigDict
-
     from lsy_drone_racing.control.controller import Controller
     from lsy_drone_racing.envs.drone_race import DroneRaceEnv
 
@@ -104,23 +102,23 @@ def simulate(
             i += 1
 
         controller.episode_callback()  # Update the controller internal state and models.
-        log_episode_stats(obs, info, config, curr_time)
+        log_episode_stats(obs, curr_time)
         controller.episode_reset()
-        ep_times.append(curr_time if obs["target_gate"] == -1 else None)
+        finished = obs["n_gates_passed"] == obs["gate_sequence"].shape[0]
+        ep_times.append(curr_time if finished else None)
 
     # Close the environment
     env.close()
     return ep_times
 
 
-def log_episode_stats(obs: dict, info: dict, config: ConfigDict, curr_time: float):
+def log_episode_stats(obs: dict, curr_time: float):
     """Log the statistics of a single episode."""
-    gates_passed = obs["target_gate"]
-    if gates_passed == -1:  # The drone has passed the final gate
-        gates_passed = len(config.env.track.gates)
-    finished = gates_passed == len(config.env.track.gates)
+    finished = obs["n_gates_passed"] == obs["gate_sequence"].shape[0]
     logger.info(
-        f"Flight time (s): {curr_time}\nFinished: {finished}\nGates passed: {gates_passed}\n"
+        f"Flight time (s): {curr_time}\n"
+        f"Finished: {finished}\n"
+        f"Gates passed: {obs['n_gates_passed']}\n"
     )
 
 
