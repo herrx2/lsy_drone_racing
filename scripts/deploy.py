@@ -48,7 +48,7 @@ def main(config: str = "level2.toml", controller: str | None = None):
         control_mode=config.env.control_mode,
     )
     try:
-        obs, info = env.reset(options=config.deploy)
+        obs, info = env.reset(seed=config.env.seed, options=config.deploy)
         next_obs = obs  # Set next_obs to avoid errors when the loop never enters
 
         control_path = Path(__file__).parents[1] / "lsy_drone_racing/control"

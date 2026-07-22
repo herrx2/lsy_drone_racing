@@ -8,6 +8,7 @@ to the real drones.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -17,6 +18,7 @@ import rclpy
 from drone_estimators.ros_nodes.ros2_connector import ROSConnector
 from drone_models.core import load_params
 from gymnasium import Env
+from scipy.spatial.transform import Rotation as R
 
 from lsy_drone_racing.envs.utils import gate_passed, load_gate_order, load_track
 from lsy_drone_racing.utils.checks import check_drone_start_pos, check_race_track
@@ -25,6 +27,8 @@ from lsy_drone_racing.utils.crazyflie import Crazyflie
 if TYPE_CHECKING:
     from ml_collections import ConfigDict
     from numpy.typing import NDArray
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -90,6 +94,7 @@ class RealRaceCoreEnv:
         # Static env data
         self.n_drones = len(drones)
         self.gates, self.obstacles, self.drones = load_track(track)
+        self.randomize_track = track.randomize
         self.n_gates = len(self.gates.pos)
         self.gate_sequence, self.gate_sequence_direction = load_gate_order(track, self.n_gates)
         self.n_obstacles = len(self.obstacles.pos)
@@ -126,6 +131,13 @@ class RealRaceCoreEnv:
         # disabled, they are equal to the nominal positions defined in the track config.
         if options.get("real_track_objects", True):
             self._update_track_poses()
+            if self.randomize_track:
+                self._randomize_nominal_track(seed)
+        elif self.randomize_track:
+            raise ValueError(
+                "Randomized tracks require measured track poses. Set deploy.real_track_objects to "
+                "true or disable env.track.randomize."
+            )
         if options.get("check_race_track", True):
             check_race_track(
                 gates_pos=self.gates.pos,
@@ -274,6 +286,31 @@ class RealRaceCoreEnv:
                 f"Could not find all track objects in the ROS TF tree: {e}. Have you enabled the "
                 "track objects in Vicon and started the motion capture tracking node?"
             ) from e
+
+    def _randomize_nominal_track(self, seed: int | None = None):
+        """Replace the nominal track poses with a noisy prior around the measured poses."""
+        if seed is None or seed == -1:
+            seed = int(np.random.default_rng().integers(0, 2**32 - 1))
+        rng = np.random.default_rng(seed)
+        kwargs = self.randomizations.gate_pos.kwargs
+        self.gates.nominal_pos[...] = self.gates.pos - rng.uniform(
+            kwargs.minval, kwargs.maxval, self.gates.pos.shape
+        )
+        kwargs = self.randomizations.gate_rpy.kwargs
+        gates_rpy = R.from_quat(self.gates.quat).as_euler("xyz")
+        gates_rpy -= rng.uniform(kwargs.minval, kwargs.maxval, gates_rpy.shape)
+        self.gates.nominal_quat[...] = R.from_euler("xyz", gates_rpy).as_quat()
+        kwargs = self.randomizations.obstacle_pos.kwargs
+        self.obstacles.nominal_pos[...] = self.obstacles.pos - rng.uniform(
+            kwargs.minval, kwargs.maxval, self.obstacles.pos.shape
+        )
+        for i, name in enumerate(self.drone_names):
+            self.drones.pos[i, ...] = self._ros_connector.pos[name]
+        logger.info(
+            f"Synthesized nominal track (seed: {seed})\n"
+            f"Gate positions:\n{self.gates.nominal_pos}\n"
+            f"Obstacle positions:\n{self.obstacles.nominal_pos}"
+        )
 
     def _jit(self):
         """JIT compile jax functions.
