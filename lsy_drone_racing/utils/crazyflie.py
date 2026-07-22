@@ -386,9 +386,7 @@ class Crazyflie:
         body_rates: NDArray[np.floating],
     ) -> None:
         await self._change_commander_level("low")
-        await self.cf.commander().send_setpoint_full_state(
-            pos, vel, acc, quat, body_rates[0], body_rates[1], body_rates[2]
-        )
+        await self.cf.commander().send_setpoint_full_state(pos, vel, acc, quat, body_rates)
 
     async def _stop_setpoint(self) -> None:
         await self.cf.commander().send_stop_setpoint()

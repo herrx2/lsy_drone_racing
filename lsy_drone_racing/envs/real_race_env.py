@@ -180,7 +180,7 @@ class RealRaceCoreEnv:
             passed = gate_passed(
                 drone_pos, self.data.last_drone_pos, gate_pos, gate_quat, gate_reverse, (0.45, 0.45)
             )
-        self.data.n_gates_passed = self.data.n_gates_passed + passed
+        self.data.n_gates_passed = self.data.n_gates_passed + np.asarray(passed)
         self.data.last_drone_pos[...] = drone_pos
         self.data.taken_off |= drone_pos[self.rank, 2] > 0.1
         return self.obs(), self.reward(), self.terminated(), self.truncated(), self.info()
