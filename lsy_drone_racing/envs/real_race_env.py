@@ -15,8 +15,7 @@ from typing import TYPE_CHECKING, Literal
 import jax
 import numpy as np
 import rclpy
-from crazyflow.dynamics import available_dynamics
-from crazyflow.dynamics.core import load_params
+from crazyflow.drones import load_params as load_hardware_params
 from drone_estimators.ros_nodes.ros2_connector import ROSConnector
 from gymnasium import Env
 from scipy.spatial.transform import Rotation as R
@@ -111,9 +110,7 @@ class RealRaceCoreEnv:
         self.control_mode = control_mode
         self.randomizations = randomizations
         drone_config = drones[rank]
-        self.drone_parameters = load_params(
-            available_dynamics["first_principles"], drone_config["drone"]
-        )
+        self.drone_parameters = load_hardware_params(drone_config["drone"])
         self.drone = Crazyflie.from_radio(
             radio_id=self.rank,
             radio_channel=drone_config["channel"],

@@ -31,8 +31,7 @@ import jax
 import jax.numpy as jp
 import mujoco
 import numpy as np
-from crazyflow.control.core import load_params
-from crazyflow.control.mellinger import force_torque2rotor_vel
+from crazyflow.drones import load_params as load_hardware_params
 from crazyflow.sim import Sim
 from crazyflow.sim.pipeline import append_fn, insert_fn_before
 from crazyflow.sim.sim import seed_sim, sync_sim2mjx, use_box_collision
@@ -236,7 +235,7 @@ def build_action_space(control_mode: Literal["state", "attitude"], drone: str) -
     if control_mode == "state":
         return spaces.Box(low=-np.inf, high=np.inf, shape=(13,))
     if control_mode == "attitude":
-        params = load_params(force_torque2rotor_vel, drone)
+        params = load_hardware_params(drone)
         thrust_min, thrust_max = params["thrust_min"] * 4, params["thrust_max"] * 4
         return spaces.Box(
             np.array([-np.pi / 2, -np.pi / 2, -np.pi / 2, thrust_min], dtype=np.float32),
