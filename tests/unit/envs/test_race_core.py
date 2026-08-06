@@ -1,7 +1,7 @@
 """Unit tests for the RaceCoreEnv class.
 
 These tests focus on the race-core logic (obs, reward, terminated, truncated, close, gate-pass
-detection) rather than physics or rendering. They exercise both the public properties and a few
+detection) rather than dynamics or rendering. They exercise both the public properties and a few
 "hidden" helpers (``_step_env``, ``_disabled_drones``) by crafting the env data directly, following
 the same pattern used in the render integration tests.
 """
@@ -272,7 +272,7 @@ def test_gate_pass_increments_n_gates_passed():
     new_sim_data = data.sim_data.replace(states=data.sim_data.states.replace(pos=new_pos))
     env.unwrapped.data = data.replace(last_drone_pos=new_last, sim_data=new_sim_data)
 
-    # Call _update_target_gates directly so physics doesn't overwrite our crafted positions.
+    # Call _update_target_gates directly so dynamics doesn't overwrite our crafted positions.
     new_data = _update_target_gates(env.unwrapped.data)
     assert int(np.asarray(new_data.n_gates_passed[0, 0])) == 1
     env.close()
