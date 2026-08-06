@@ -17,7 +17,9 @@ import fire
 import gymnasium
 import rclpy
 
+from lsy_drone_racing.envs.race_core import RaceCoreEnv
 from lsy_drone_racing.utils import load_config, load_controller
+from lsy_drone_racing.utils.deploy_viewer import DeployViewer
 
 if TYPE_CHECKING:
     from lsy_drone_racing.envs.real_race_env import RealDroneRaceEnv
@@ -25,13 +27,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def main(config: str = "level2.toml", controller: str | None = None):
+def main(config: str = "level2.toml", controller: str | None = None, render: bool = False):
     """Deployment script to run the controller on the real drone.
 
     Args:
         config: Path to the competition configuration. Assumes the file is in `config/`.
         controller: The name of the controller file in `lsy_drone_racing/control/` or None. If None,
          the controller specified in the config file is used.
+        render: Show a live MuJoCo window that mirrors the real race from mocap data.
     """
     rclpy.init()
     config = load_config(Path(__file__).parents[1] / "config" / config)
@@ -47,9 +50,36 @@ def main(config: str = "level2.toml", controller: str | None = None):
         sensor_range=config.env.sensor_range,
         control_mode=config.env.control_mode,
     )
+    viewer = None
     try:
+        if render:
+            viewer_sim_config = config.sim.copy_and_resolve_references()
+            viewer_sim_config.drone = config.deploy.drones[0]["drone"]
+            viewer_sim_config.camera = -1
+            viewer_env = RaceCoreEnv(
+                n_envs=1,
+                n_drones=1,
+                freq=config.env.freq,
+                sim_config=viewer_sim_config,
+                sensor_range=config.env.sensor_range,
+                track=config.env.track,
+                control_mode=config.env.control_mode,
+                seed=config.env.seed,
+                device="cpu",
+            )
+            viewer = DeployViewer(viewer_env)
+            viewer.warm_up()
+
         obs, info = env.reset(seed=config.env.seed, options=config.deploy)
         next_obs = obs  # Set next_obs to avoid errors when the loop never enters
+
+        if render:
+            viewer.set_track(
+                gates_pos=env.unwrapped.gates.pos,
+                gates_quat=env.unwrapped.gates.quat,
+                obstacles_pos=env.unwrapped.obstacles.pos,
+            )
+            viewer.update(obs["pos"], obs["quat"])
 
         control_path = Path(__file__).parents[1] / "lsy_drone_racing/control"
         controller_path = control_path / config.controller.file
@@ -62,6 +92,8 @@ def main(config: str = "level2.toml", controller: str | None = None):
             obs = {k: v[0] for k, v in obs.items()}
             action = controller.compute_control(obs, info)
             next_obs, reward, terminated, truncated, info = env.step(action)
+            if render:
+                viewer.update(next_obs["pos"], next_obs["quat"])
             controller_finished = controller.step_callback(
                 action, next_obs, reward, terminated, truncated, info
             )
@@ -76,6 +108,8 @@ def main(config: str = "level2.toml", controller: str | None = None):
         finished_track = next_obs["n_gates_passed"] == next_obs["gate_sequence"].shape[0]
         logger.info(f"Track time: {ep_time:.3f}s" if finished_track else "Task not completed")
     finally:
+        if viewer is not None:
+            viewer.close()
         env.close()
 
 
