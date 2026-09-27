@@ -14,7 +14,9 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from crazyflow.drones import load_params as load_hardware_params
+from crazyflow.control import load_params as load_control_params
+from crazyflow.dynamics import load_params as load_dynamics_params
+from scipy.spatial.transform import Rotation as R
 
 from lsy_drone_racing.control.attitude_controller import AttitudeController
 from lsy_drone_racing.utils import load_config
@@ -73,10 +75,11 @@ def state_circle(drone: Any, center: np.ndarray, height: float, radius: float, f
     t_start = time.perf_counter()
     for step in range(steps):
         alpha = (step + 1) / steps
-        action = np.zeros(13, dtype=np.float32)
+        action = np.zeros(16, dtype=np.float32)
         action[:3] = (1 - alpha) * start + alpha * target
         action[3:6] = (target - start) / takeoff_duration
-        drone.send_action_state(action[:3], action[3:6], action[6:9], action[9], action[10:])
+        action[9:13] = R.from_euler("z", 0.0).as_quat()
+        drone.send_action_state(action[:3], action[3:6], action[6:9], action[9:13], action[13:16])
         drone.send_external_pose()
         sleep_step(t_start, step, freq)
 
@@ -86,13 +89,14 @@ def state_circle(drone: Any, center: np.ndarray, height: float, radius: float, f
     t_start = time.perf_counter()
     for step in range(steps):
         theta = omega * step / freq
-        action = np.zeros(13, dtype=np.float32)
+        action = np.zeros(16, dtype=np.float32)
         action[:3] = target + np.array([radius * np.cos(theta), radius * np.sin(theta), 0.0])
         action[3:6] = [-radius * omega * np.sin(theta), radius * omega * np.cos(theta), 0.0]
         action[6:9] = [-radius * omega**2 * np.cos(theta), -radius * omega**2 * np.sin(theta), 0.0]
-        action[9] = theta + np.pi / 2
-        action[12] = omega
-        drone.send_action_state(action[:3], action[3:6], action[6:9], action[9], action[10:])
+        yaw = theta + np.pi / 2
+        action[9:13] = R.from_euler("z", yaw).as_quat()
+        action[15] = omega
+        drone.send_action_state(action[:3], action[3:6], action[6:9], action[9:13], action[13:16])
         drone.send_external_pose()
         sleep_step(t_start, step, freq)
     logger.info("Finished state-command circle.")
@@ -197,7 +201,10 @@ def main() -> None:
     drone_name = f"cf{drone_config['id']}"
     radio_id = args.rank if args.radio_id is None else args.radio_id
     home_pos = np.array(config.env.track.drones[args.rank]["pos"], dtype=np.float32)
-    drone_params = load_hardware_params(drone_config["drone"])
+    drone_params = load_dynamics_params(config.sim.dynamics, drone_config["drone"])
+    control_params = load_control_params("mellinger", drone_config["drone"])["core"]
+    drone_params.update(pwm_min=control_params["pwm_min"])
+    drone_params.update(pwm_max=control_params["pwm_max"])
 
     logger.info("Initializing ROS for %s.", drone_name)
     rclpy.init()

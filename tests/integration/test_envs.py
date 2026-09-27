@@ -4,7 +4,7 @@ import gymnasium
 import jax
 import jax.numpy as jp
 import pytest
-from crazyflow.dynamics.core import Dynamics
+from crazyflow.dynamics import Dynamics
 
 import lsy_drone_racing  # noqa: F401, environment registrations
 from lsy_drone_racing.envs.drone_race import DroneRaceEnv
@@ -40,7 +40,7 @@ def skip_unavailable_device(device: str):
 @pytest.mark.parametrize("config_file", CONFIG_FILES["DroneRacing-v0"])
 @pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.integration
-def test_single_drone_envs(config_file: str, dynamics: str, device: str):
+def test_single_drone_envs(config_file: str, dynamics: Dynamics, device: str):
     """Test the simulation environments with different dynamics modes and config files."""
     config = load_config(Path(__file__).parents[2] / "config" / config_file)
     assert hasattr(config.sim, "dynamics"), "dynamics mode is not set"
@@ -82,7 +82,7 @@ def test_single_drone_envs(config_file: str, dynamics: str, device: str):
 @pytest.mark.parametrize("config_file", CONFIG_FILES["MultiDroneRacing-v0"])
 @pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.integration
-def test_multi_drone_envs(config_file: str, dynamics: str, device: str):
+def test_multi_drone_envs(config_file: str, dynamics: Dynamics, device: str):
     """Test the simulation environments with different dynamics modes and config files."""
     config = load_config(Path(__file__).parents[2] / "config" / config_file)
     assert hasattr(config.sim, "dynamics"), "dynamics mode is not set"

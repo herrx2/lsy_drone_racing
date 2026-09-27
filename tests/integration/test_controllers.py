@@ -3,8 +3,9 @@ from pathlib import Path
 import gymnasium
 import numpy as np
 import pytest
-from crazyflow.dynamics.core import Dynamics
+from crazyflow.dynamics import Dynamics
 from gymnasium.wrappers.jax_to_numpy import JaxToNumpy
+from scipy.spatial.transform import Rotation as R
 
 from lsy_drone_racing.utils import load_config, load_controller
 
@@ -80,7 +81,7 @@ def test_attitude_controller(dynamics: Dynamics, controller: str):
 @pytest.mark.integration
 @pytest.mark.parametrize("yaw", [0, np.pi / 2, np.pi, 3 * np.pi / 2])
 @pytest.mark.parametrize("dynamics", [Dynamics.first_principles])
-def test_trajectory_controller_finish(yaw: float, dynamics: str):
+def test_trajectory_controller_finish(yaw: float, dynamics: Dynamics):
     """Test if the trajectory controller can finish the track.
 
     To catch bugs that only occur with orientations other than the unit quaternion, we test if the
@@ -110,7 +111,8 @@ def test_trajectory_controller_finish(yaw: float, dynamics: str):
     ctrl = ctrl_cls(obs, info, config)
     while True:
         action = ctrl.compute_control(obs, info)
-        action[9] = yaw  # Quadrotor should be able to finish the track regardless of yaw
+        # Quadrotor should be able to finish the track regardless of yaw
+        action[9:13] = R.from_euler("z", yaw).as_quat()
         obs, reward, terminated, truncated, info = env.step(action)
         ctrl.step_callback(action, obs, reward, terminated, truncated, info)
         if terminated or truncated:

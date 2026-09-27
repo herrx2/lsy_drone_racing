@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pygame
-from crazyflow.drones import load_params as load_hardware_params
+from crazyflow.dynamics import load_params as load_dynamics_params
 from scipy.spatial.transform import Rotation as R
 
 from lsy_drone_racing.control import Controller
@@ -36,10 +36,10 @@ class AttitudeController(Controller):
         self.freq = config.env.freq
 
         # For more info on the models, check out https://github.com/learnsyslab/crazyflow
-        drone_params = load_hardware_params(config.sim.drone)
+        drone_params = load_dynamics_params(config.sim.dynamics, config.sim.drone)
         self.drone_mass = drone_params["mass"]
-        self.thrust_min = drone_params["thrust_min"] * 4
-        self.thrust_max = drone_params["thrust_max"] * 4
+        self.total_thrust_min = drone_params["thrust_min"] * 4
+        self.total_thrust_max = drone_params["thrust_max"] * 4
 
         self.kp = np.array([0.4, 0.4, 1.25])
         self.ki = np.array([0.05, 0.05, 0.05])
@@ -109,8 +109,8 @@ class AttitudeController(Controller):
         euler = [self._roll, self._pitch, self._yaw]
         euler[:2] = np.clip(euler[:2], -max_angle, max_angle)
 
-        thrust_desired += self.thrust_max / 8 * (rt + 1) / 2
-        thrust_desired -= self.thrust_max / 8 * (lt + 1) / 2
+        thrust_desired += self.total_thrust_max / 8 * (rt + 1) / 2
+        thrust_desired -= self.total_thrust_max / 8 * (lt + 1) / 2
 
         return np.concat([euler, [thrust_desired]], dtype=np.float32)
 

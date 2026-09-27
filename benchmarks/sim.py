@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+from crazyflow.dynamics import Dynamics
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -130,7 +131,7 @@ def time_sim_reset(
 def time_sim_step(
     n_tests: int = 10,
     number: int = 1,
-    dynamics: str = "first_principles",
+    dynamics: Dynamics = Dynamics.first_principles,
     n_envs: int = 1,
     device: str = "cpu",
 ) -> NDArray[np.floating]:
@@ -162,7 +163,7 @@ def time_multi_drone_reset(
 def time_multi_drone_step(
     n_tests: int = 10,
     number: int = 100,
-    dynamics: str = "first_principles",
+    dynamics: Dynamics = Dynamics.first_principles,
     n_envs: int = 1,
     device: str = "cpu",
 ) -> NDArray[np.floating]:

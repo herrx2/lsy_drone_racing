@@ -15,6 +15,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import wandb
+from crazyflow.drones import Drone
 from crazyflow.dynamics import Dynamics
 from crazyflow.envs.drone_env import DroneEnv
 from crazyflow.envs.norm_actions_wrapper import NormalizeActions
@@ -134,7 +135,7 @@ class RandTrajEnv(DroneEnv):
         num_envs: int = 1,
         max_episode_time: float = 15.0,
         dynamics: Dynamics = Dynamics.first_principles,
-        drone: str = "cf21B_500",
+        drone: Drone = Drone.cf21B_500,
         freq: int = 500,
         disturbances: ConfigDict | None = None,
         device: str = "cpu",
@@ -308,7 +309,9 @@ class RandTrajEnv(DroneEnv):
         terminate = jp.any((pos[:, 0, :] < lower_bounds) | (pos[:, 0, :] > upper_bounds), axis=-1)
         return terminate
 
-    def build_reset_randomization_fn(self, dynamics: str) -> Callable[[SimData, Array], SimData]:
+    def build_reset_randomization_fn(
+        self, dynamics: Dynamics
+    ) -> Callable[[SimData, Array], SimData]:
         """Reset randomization."""
 
         # Spin up rotors to help takeoff
@@ -327,9 +330,9 @@ class RandTrajEnv(DroneEnv):
             return data
 
         match dynamics:
-            case "first_principles":
+            case Dynamics.first_principles:
                 return _reset_randomization_first_principles
-            case "so_rpy" | "so_rpy_rotor" | "so_rpy_rotor_drag":
+            case Dynamics.so_rpy | Dynamics.so_rpy_rotor | Dynamics.so_rpy_rotor_drag:
                 return _reset_randomization_so_rpy
             case _:
                 return _reset_randomization_so_rpy

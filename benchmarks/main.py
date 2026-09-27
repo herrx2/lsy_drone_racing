@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fire
 import numpy as np
+from crazyflow.dynamics import Dynamics
 from sim import time_multi_drone_reset, time_multi_drone_step, time_sim_reset, time_sim_step
 
 
@@ -36,7 +37,7 @@ def main(
             name="Racing env steps", timings=timings / number, n_envs=vec_size, device=device
         )
         timings = step_fn(
-            n_tests=n_tests, number=number, dynamics="so_rpy", n_envs=vec_size, device=device
+            n_tests=n_tests, number=number, dynamics=Dynamics.so_rpy, n_envs=vec_size, device=device
         )
         print_benchmark_results(
             name="Racing env steps (so_rpy backend)",

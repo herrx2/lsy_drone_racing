@@ -47,6 +47,7 @@ def main(config: str = "level2.toml", controller: str | None = None, render: boo
         freq=config.env.freq,
         track=config.env.track,
         randomizations=config.env.randomizations,
+        dynamics=config.sim.dynamics,
         sensor_range=config.env.sensor_range,
         control_mode=config.env.control_mode,
     )

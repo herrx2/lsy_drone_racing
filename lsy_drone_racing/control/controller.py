@@ -60,7 +60,7 @@ class Controller(ABC):
             info: Optional additional information as a dictionary.
 
         Returns:
-            A drone state command [x, y, z, vx, vy, vz, ax, ay, az, yaw, rrate, prate, yrate] in
+            A drone state command [x, y, z, vx, vy, vz, ax, ay, az, qx, qy, qz, qw, wx, wy, wz] in
             absolute coordinates or an attitude command [thrust, roll, pitch, yaw] as a numpy array.
         """
 

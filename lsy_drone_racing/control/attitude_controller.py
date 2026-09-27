@@ -14,7 +14,7 @@ import math
 from typing import TYPE_CHECKING
 
 import numpy as np
-from crazyflow.drones import load_params as load_hardware_params
+from crazyflow.dynamics import load_params as load_dynamics_params
 from scipy.interpolate import CubicSpline
 from scipy.spatial.transform import Rotation as R
 
@@ -40,7 +40,7 @@ class AttitudeController(Controller):
         self._freq = config.env.freq
 
         # For more info on the models, check out https://github.com/learnsyslab/crazyflow
-        drone_params = load_hardware_params(config.sim.drone)
+        drone_params = load_dynamics_params(config.sim.dynamics, config.sim.drone)
         self.drone_mass = drone_params["mass"]
 
         self.kp = np.array([0.4, 0.4, 1.25])

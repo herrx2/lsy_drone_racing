@@ -14,9 +14,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import scipy
 from acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver
-from crazyflow.drones import load_params as load_hardware_params
-from crazyflow.dynamics.core import load_params as load_dynamics_params
-from crazyflow.dynamics.so_rpy import dynamics, symbolic_dynamics_euler
+from crazyflow.dynamics import Dynamics, load_params
+from crazyflow.dynamics.so_rpy import symbolic_dynamics_euler
 from crazyflow.dynamics.utils.rotation import ang_vel2rpy_rates
 from scipy.interpolate import CubicSpline
 from scipy.spatial.transform import Rotation as R
@@ -131,8 +130,10 @@ def create_ocp_solver(
     ocp.constraints.idxbx = np.array([3, 4, 5])
 
     # Set Input Constraints (rpy < 30°)
-    ocp.constraints.lbu = np.array([-0.5, -0.5, -0.5, parameters["thrust_min"] * 4])
-    ocp.constraints.ubu = np.array([0.5, 0.5, 0.5, parameters["thrust_max"] * 4])
+    total_thrust_min = parameters["thrust_min"] * 4
+    total_thrust_max = parameters["thrust_max"] * 4
+    ocp.constraints.lbu = np.array([-0.5, -0.5, -0.5, total_thrust_min])
+    ocp.constraints.ubu = np.array([0.5, 0.5, 0.5, total_thrust_max])
     ocp.constraints.idxbu = np.array([0, 1, 2, 3])
 
     # We have to set x0 even though we will overwrite it later on.
@@ -212,10 +213,7 @@ class AttitudeMPC(Controller):
         )
         self._waypoints_yaw = self._waypoints_pos[:, 0] * 0
 
-        self.drone_params = load_dynamics_params(dynamics, config.sim.drone)
-        thrust_params = load_hardware_params(config.sim.drone)
-        self.drone_params["thrust_min"] = 4 * thrust_params["thrust_min"]
-        self.drone_params["thrust_max"] = 4 * thrust_params["thrust_max"]
+        self.drone_params = load_params(Dynamics.so_rpy, config.sim.drone)
         self._acados_ocp_solver, self._ocp = create_ocp_solver(
             self._T_HORIZON, self._N, self.drone_params
         )

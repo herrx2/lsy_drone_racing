@@ -47,6 +47,7 @@ def control_loop(rank: int, config: ConfigDict, start_barrier: Barrier):
         freq=config.env.freq,
         track=config.env.track,
         randomizations=config.env.randomizations,
+        dynamics=config.sim.dynamics,
         sensor_range=config.env.sensor_range,
         control_mode=config.env.control_mode,
     )

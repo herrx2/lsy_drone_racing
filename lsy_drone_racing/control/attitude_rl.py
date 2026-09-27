@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
-from crazyflow.drones import load_params as load_hardware_params
+from crazyflow.dynamics import load_params as load_dynamics_params
 from scipy.interpolate import CubicSpline
 
 from lsy_drone_racing.control import Controller
@@ -41,10 +41,10 @@ class AttitudeRL(Controller):
         self.freq = config.env.freq
 
         # For more info on the models, check out https://github.com/learnsyslab/crazyflow
-        drone_params = load_hardware_params(config.sim.drone)
+        drone_params = load_dynamics_params(config.sim.dynamics, config.sim.drone)
         self.drone_mass = drone_params["mass"]
-        self.thrust_min = drone_params["thrust_min"] * 4  # min total thrust
-        self.thrust_max = drone_params["thrust_max"] * 4  # max total thrust
+        self.total_thrust_min = drone_params["thrust_min"] * 4  # min total thrust
+        self.total_thrust_max = drone_params["thrust_max"] * 4  # max total thrust
 
         # Set num of stacked obs
         self.n_obs = 2
@@ -135,11 +135,16 @@ class AttitudeRL(Controller):
     def _scale_actions(self, actions: NDArray) -> NDArray:
         """Rescale and clip actions from [-1, 1] to [action_sim_low, action_sim_high]."""
         scale = np.array(
-            [np.pi / 2, np.pi / 2, np.pi / 2, (self.thrust_max - self.thrust_min) / 2.0],
+            [
+                np.pi / 2,
+                np.pi / 2,
+                np.pi / 2,
+                (self.total_thrust_max - self.total_thrust_min) / 2.0,
+            ],
             dtype=np.float32,
         )
         mean = np.array(
-            [0.0, 0.0, 0.0, (self.thrust_max + self.thrust_min) / 2.0], dtype=np.float32
+            [0.0, 0.0, 0.0, (self.total_thrust_max + self.total_thrust_min) / 2.0], dtype=np.float32
         )
         return np.clip(actions, -1.0, 1.0) * scale + mean
 

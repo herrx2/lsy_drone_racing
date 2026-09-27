@@ -57,7 +57,8 @@ def randomize_drone_mass_fn(
 
     def randomize_drone_mass(data: SimData, mask: Array) -> SimData:
         key, subkey = jax.random.split(data.core.rng_key)
-        mass = data.params.mass + randomize_fn(subkey, shape=data.params.mass.shape)
+        shape = (data.core.n_worlds, data.core.n_drones, 1)
+        mass = data.params.mass + randomize_fn(subkey, shape=shape)
         params = leaf_replace(data.params, mask, mass=mass)
         return data.replace(core=data.core.replace(rng_key=key), params=params)
 
@@ -71,7 +72,8 @@ def randomize_drone_inertia_fn(
 
     def randomize_drone_inertia(data: SimData, mask: Array) -> SimData:
         key, subkey = jax.random.split(data.core.rng_key)
-        J = data.params.J + randomize_fn(subkey, shape=data.params.J.shape)
+        shape = (data.core.n_worlds, data.core.n_drones, 3, 3)
+        J = data.params.J + randomize_fn(subkey, shape=shape)
         J_inv = jp.linalg.inv(J)
         params = leaf_replace(data.params, mask, J=J, J_inv=J_inv)
         return data.replace(core=data.core.replace(rng_key=key), params=params)
