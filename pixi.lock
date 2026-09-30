@@ -1,7 +1,16 @@
 version: 7
 platforms:
 - name: linux-64
+  virtual-packages:
+  - __unix=0=0
+  - __linux=4.18
+  - __glibc=2.28
+  - __archspec=0=x86_64
 - name: osx-arm64
+  virtual-packages:
+  - __unix=0=0
+  - __osx=13.0
+  - __archspec=0=m1
 environments:
   default:
     channels:
@@ -102,8 +111,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/virtualenv-21.7.4-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
-      - pypi: .
-      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=96447081f3b34d383a0d010d29296d7ba3a85310#96447081f3b34d383a0d010d29296d7ba3a85310
+      - pypi: ./
+      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=d28ec70#d28ec70d2478a230f1feb0fb3d644d1bbdbb8107
       - pypi: https://files.pythonhosted.org/packages/0f/85/82e456879df00e8bed7074028b0e1ddf2ce4e58dd83b699b9e9ef8306542/jaxlib-0.11.0-cp313-cp313-manylinux_2_27_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/15/c0/0be24758891ef825f2065cd5db8741aaddabe3e248ee6acc5e8a80f04005/uvloop-0.22.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/1d/3d/47feef2eee4739437e19d6949ea231ca4181c9eacbaa39144761e6130d94/warp_lang-1.16.0-py3-none-manylinux_2_28_x86_64.whl
@@ -250,8 +259,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/yaml-0.2.5-h74c22ad_3.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zlib-1.3.2-h8088a28_3.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
-      - pypi: .
-      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=96447081f3b34d383a0d010d29296d7ba3a85310#96447081f3b34d383a0d010d29296d7ba3a85310
+      - pypi: ./
+      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=d28ec70#d28ec70d2478a230f1feb0fb3d644d1bbdbb8107
       - pypi: https://files.pythonhosted.org/packages/0c/30/19cebe8b381179ccd45faab303f4279c3aaa3a707387c42fbbb43ca778ac/orbax_checkpoint-0.12.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/10/76/8803c13605b763d33d156c4678fc77f8443389c0c51c8aef707bb02015f4/pillow-12.3.0-cp313-cp313-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/13/c5/d76b54aac96c4767424d3d4acc7713db4bb99b1782e74f8863c18ce1a0b5/array_api_extra-0.11.2-py3-none-any.whl
@@ -1061,9 +1070,9 @@ environments:
       - conda: https://prefix.dev/robostack-kilted/linux-64/ros-kilted-zenoh-cpp-vendor-0.6.4-np2py312hf7ffe29_14.conda
       - conda: https://prefix.dev/robostack-kilted/linux-64/ros-kilted-zstd-vendor-0.32.0-np2py312h31f38b3_14.conda
       - conda: https://prefix.dev/robostack-kilted/linux-64/ros2-distro-mutex-0.12.0-kilted_14.conda
-      - pypi: .
+      - pypi: ./
       - pypi: git+https://github.com/bitcraze/crazyflie-lib-python-v2.git?rev=d87b796#d87b796ed07ac0fd96d32c3d7b6c5f09cafc5330
-      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=96447081f3b34d383a0d010d29296d7ba3a85310#96447081f3b34d383a0d010d29296d7ba3a85310
+      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=d28ec70#d28ec70d2478a230f1feb0fb3d644d1bbdbb8107
       - pypi: https://files.pythonhosted.org/packages/0c/b6/156a8de1e1b47694f0e7de6675866936608d45dc68388fd017d36f8693be/simplejson-4.1.1-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/10/13/b8887c869cf2471339a24b60d3c28e761facbb534935f572b61423371abb/nvidia_cudnn_cu12-9.24.0.43-py3-none-manylinux_2_27_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/12/46/b0fd4b04f86577921feb97d8e2cf028afe04f614d17fb5013de9282c9216/nvidia_cusparse_cu12-12.5.10.65-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
@@ -1256,8 +1265,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/urllib3-2.7.0-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/virtualenv-21.7.4-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
-      - pypi: .
-      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=96447081f3b34d383a0d010d29296d7ba3a85310#96447081f3b34d383a0d010d29296d7ba3a85310
+      - pypi: ./
+      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=d28ec70#d28ec70d2478a230f1feb0fb3d644d1bbdbb8107
       - pypi: https://files.pythonhosted.org/packages/0f/85/82e456879df00e8bed7074028b0e1ddf2ce4e58dd83b699b9e9ef8306542/jaxlib-0.11.0-cp313-cp313-manylinux_2_27_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/15/c0/0be24758891ef825f2065cd5db8741aaddabe3e248ee6acc5e8a80f04005/uvloop-0.22.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/1d/3d/47feef2eee4739437e19d6949ea231ca4181c9eacbaa39144761e6130d94/warp_lang-1.16.0-py3-none-manylinux_2_28_x86_64.whl
@@ -1446,8 +1455,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/yaml-0.2.5-h74c22ad_3.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zlib-1.3.2-h8088a28_3.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
-      - pypi: .
-      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=96447081f3b34d383a0d010d29296d7ba3a85310#96447081f3b34d383a0d010d29296d7ba3a85310
+      - pypi: ./
+      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=d28ec70#d28ec70d2478a230f1feb0fb3d644d1bbdbb8107
       - pypi: https://files.pythonhosted.org/packages/0b/b7/a5a854d4e44853f26decc0c5e0d68df052399f3da344a313da4178f00816/mkdocstrings_python-2.0.8-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/0c/30/19cebe8b381179ccd45faab303f4279c3aaa3a707387c42fbbb43ca778ac/orbax_checkpoint-0.12.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/10/76/8803c13605b763d33d156c4678fc77f8443389c0c51c8aef707bb02015f4/pillow-12.3.0-cp313-cp313-macosx_11_0_arm64.whl
@@ -1599,8 +1608,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/virtualenv-21.7.4-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
-      - pypi: .
-      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=96447081f3b34d383a0d010d29296d7ba3a85310#96447081f3b34d383a0d010d29296d7ba3a85310
+      - pypi: ./
+      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=d28ec70#d28ec70d2478a230f1feb0fb3d644d1bbdbb8107
       - pypi: https://files.pythonhosted.org/packages/0f/85/82e456879df00e8bed7074028b0e1ddf2ce4e58dd83b699b9e9ef8306542/jaxlib-0.11.0-cp313-cp313-manylinux_2_27_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/15/c0/0be24758891ef825f2065cd5db8741aaddabe3e248ee6acc5e8a80f04005/uvloop-0.22.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/1d/3d/47feef2eee4739437e19d6949ea231ca4181c9eacbaa39144761e6130d94/warp_lang-1.16.0-py3-none-manylinux_2_28_x86_64.whl
@@ -1748,8 +1757,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/yaml-0.2.5-h74c22ad_3.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zlib-1.3.2-h8088a28_3.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
-      - pypi: .
-      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=96447081f3b34d383a0d010d29296d7ba3a85310#96447081f3b34d383a0d010d29296d7ba3a85310
+      - pypi: ./
+      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=d28ec70#d28ec70d2478a230f1feb0fb3d644d1bbdbb8107
       - pypi: https://files.pythonhosted.org/packages/0c/30/19cebe8b381179ccd45faab303f4279c3aaa3a707387c42fbbb43ca778ac/orbax_checkpoint-0.12.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/0e/c6/9cb315de851a7682d9c7568a41ea042ee98d668cb8deadc1dafcab6116f0/pygame-2.6.1-cp313-cp313-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/10/76/8803c13605b763d33d156c4678fc77f8443389c0c51c8aef707bb02015f4/pillow-12.3.0-cp313-cp313-macosx_11_0_arm64.whl
@@ -1895,8 +1904,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/virtualenv-21.7.4-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
-      - pypi: .
-      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=96447081f3b34d383a0d010d29296d7ba3a85310#96447081f3b34d383a0d010d29296d7ba3a85310
+      - pypi: ./
+      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=d28ec70#d28ec70d2478a230f1feb0fb3d644d1bbdbb8107
       - pypi: https://files.pythonhosted.org/packages/05/6b/32f747947df2da6994e999492ab306a903659555dddc0fbdeb9d71f75e52/nvidia_cuda_nvrtc_cu12-12.8.93-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/0d/9b/a997b638fcd068ad6e4d53b8551a7d30fe8b404d6f1804abf1df69838932/nvidia_cuda_runtime_cu12-12.8.90-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/0f/85/82e456879df00e8bed7074028b0e1ddf2ce4e58dd83b699b9e9ef8306542/jaxlib-0.11.0-cp313-cp313-manylinux_2_27_x86_64.whl
@@ -2061,8 +2070,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/virtualenv-21.7.4-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
-      - pypi: .
-      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=96447081f3b34d383a0d010d29296d7ba3a85310#96447081f3b34d383a0d010d29296d7ba3a85310
+      - pypi: ./
+      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=d28ec70#d28ec70d2478a230f1feb0fb3d644d1bbdbb8107
       - pypi: https://files.pythonhosted.org/packages/05/6b/32f747947df2da6994e999492ab306a903659555dddc0fbdeb9d71f75e52/nvidia_cuda_nvrtc_cu12-12.8.93-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/07/f8/41db9de19d7987d6b04715a02b3b40aea467000275d9d758ffaa31af7d50/pydantic_core-2.46.4-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl
@@ -2245,8 +2254,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/virtualenv-21.7.4-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
-      - pypi: .
-      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=96447081f3b34d383a0d010d29296d7ba3a85310#96447081f3b34d383a0d010d29296d7ba3a85310
+      - pypi: ./
+      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=d28ec70#d28ec70d2478a230f1feb0fb3d644d1bbdbb8107
       - pypi: https://files.pythonhosted.org/packages/05/6b/32f747947df2da6994e999492ab306a903659555dddc0fbdeb9d71f75e52/nvidia_cuda_nvrtc_cu12-12.8.93-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/0d/9b/a997b638fcd068ad6e4d53b8551a7d30fe8b404d6f1804abf1df69838932/nvidia_cuda_runtime_cu12-12.8.90-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/0f/85/82e456879df00e8bed7074028b0e1ddf2ce4e58dd83b699b9e9ef8306542/jaxlib-0.11.0-cp313-cp313-manylinux_2_27_x86_64.whl
@@ -2411,8 +2420,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/virtualenv-21.7.4-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
-      - pypi: .
-      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=96447081f3b34d383a0d010d29296d7ba3a85310#96447081f3b34d383a0d010d29296d7ba3a85310
+      - pypi: ./
+      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=d28ec70#d28ec70d2478a230f1feb0fb3d644d1bbdbb8107
       - pypi: https://files.pythonhosted.org/packages/05/6b/32f747947df2da6994e999492ab306a903659555dddc0fbdeb9d71f75e52/nvidia_cuda_nvrtc_cu12-12.8.93-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/07/f8/41db9de19d7987d6b04715a02b3b40aea467000275d9d758ffaa31af7d50/pydantic_core-2.46.4-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl
@@ -2598,8 +2607,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/yaml-0.2.5-h74c22ad_3.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zlib-1.3.2-h8088a28_3.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
-      - pypi: .
-      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=96447081f3b34d383a0d010d29296d7ba3a85310#96447081f3b34d383a0d010d29296d7ba3a85310
+      - pypi: ./
+      - pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=d28ec70#d28ec70d2478a230f1feb0fb3d644d1bbdbb8107
       - pypi: https://files.pythonhosted.org/packages/04/6e/650bb7f28f771af0cb791b02348db8b7f5f64f40f6829ee82aa6ce99aabe/torch-2.8.0-cp313-none-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/0c/30/19cebe8b381179ccd45faab303f4279c3aaa3a707387c42fbbb43ca778ac/orbax_checkpoint-0.12.4-py3-none-any.whl
@@ -3211,7 +3220,7 @@ packages:
   license: Apache-2.0
   license_family: APACHE
   purls:
-  - pkg:pypi/coverage?source=compressed-mapping
+  - pkg:pypi/coverage?source=hash-mapping
   run_exports: {}
   size: 415149
   timestamp: 1786292729866
@@ -7241,7 +7250,7 @@ packages:
   - python_abi 3.12.* *_cp312
   license: LGPL-2.1-only OR MPL-1.1
   purls:
-  - pkg:pypi/pycairo?source=compressed-mapping
+  - pkg:pypi/pycairo?source=hash-mapping
   run_exports: {}
   size: 121051
   timestamp: 1786388618767
@@ -9998,7 +10007,7 @@ packages:
   license: MIT
   license_family: MIT
   purls:
-  - pkg:pypi/platformdirs?source=compressed-mapping
+  - pkg:pypi/platformdirs?source=hash-mapping
   run_exports: {}
   size: 26869
   timestamp: 1786390868223
@@ -10239,7 +10248,7 @@ packages:
   license: MIT
   license_family: MIT
   purls:
-  - pkg:pypi/pymdown-extensions?source=compressed-mapping
+  - pkg:pypi/pymdown-extensions?source=hash-mapping
   run_exports: {}
   size: 174768
   timestamp: 1787492689036
@@ -10661,7 +10670,7 @@ packages:
   - python
   license: MIT
   purls:
-  - pkg:pypi/virtualenv?source=compressed-mapping
+  - pkg:pypi/virtualenv?source=hash-mapping
   run_exports: {}
   size: 3894937
   timestamp: 1786427893830
@@ -10679,7 +10688,7 @@ packages:
   license: MIT
   license_family: MIT
   purls:
-  - pkg:pypi/virtualenv?source=compressed-mapping
+  - pkg:pypi/virtualenv?source=hash-mapping
   run_exports: {}
   size: 3895299
   timestamp: 1788296993944
@@ -10773,7 +10782,7 @@ packages:
   license: MIT
   license_family: MIT
   purls:
-  - pkg:pypi/brotli?source=compressed-mapping
+  - pkg:pypi/brotli?source=hash-mapping
   run_exports: {}
   size: 365183
   timestamp: 1786623042491
@@ -11814,7 +11823,7 @@ packages:
   license: MIT
   license_family: MIT
   purls:
-  - pkg:pypi/ruff?source=compressed-mapping
+  - pkg:pypi/ruff?source=hash-mapping
   run_exports: {}
   size: 8177581
   timestamp: 1787865392183
@@ -18978,7 +18987,7 @@ packages:
     - ros2-distro-mutex >=0.12.0,<0.13.0a0
   size: 2352
   timestamp: 1759309976763
-- pypi: .
+- pypi: ./
   name: lsy-drone-racing
   requires_dist:
   - fire>=0.6.0
@@ -18987,7 +18996,7 @@ packages:
   - gymnasium[array-api]>=1.2.0
   - ml-collections>=1.0
   - packaging>=24.0
-  - crazyflow @ git+https://github.com/learnsyslab/crazyflow.git@96447081f3b34d383a0d010d29296d7ba3a85310
+  - crazyflow @ git+https://github.com/learnsyslab/crazyflow.git@d28ec70
   - mujoco>=3.3.0,<3.11.0
   - jax>=0.7
   - warp-lang
@@ -19005,7 +19014,7 @@ packages:
   - packaging~=25.0
   - tyro>=1.0.8
   requires_python: '>=3.11'
-- pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=96447081f3b34d383a0d010d29296d7ba3a85310#96447081f3b34d383a0d010d29296d7ba3a85310
+- pypi: git+https://github.com/learnsyslab/crazyflow.git?rev=d28ec70#d28ec70d2478a230f1feb0fb3d644d1bbdbb8107
   name: crazyflow
   version: 0.3.2
   requires_dist:
