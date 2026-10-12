@@ -67,7 +67,6 @@ platforms = ["linux-64", "osx-arm64", "win-64"]
 [tool.pixi.dependencies]
 python = ">=3.11.12,<3.14"
 pip = ">=25.0.1,<26"
-pre-commit = "*"
 packaging = ">=24"
 pygments = "*"
 ruff = "*"
@@ -141,7 +140,7 @@ ZENOH_CONFIG_OVERRIDE = 'listen/endpoints=["tcp/0.0.0.0:0"];scouting/multicast/e
 
 ## feature [deploy]
 [tool.pixi.feature.deploy.tasks]
-mocap = { cmd = "bash tools/launch_mocap.sh", description = "Launch mocap tracking, nominal frame publisher, and RViz" }
+mocap = { cmd = "ros2 launch motion_capture_tracking launch.py", description = "Launch the motion capture tracking node" }
 estimator = { cmd = "python -m drone_estimators.ros_nodes.ros2_node --drone_name {{ drone_name }}", args = [
   { arg = "drone_name" },
 ], description = "Start the drone state estimator" }
@@ -155,7 +154,8 @@ rust = ">=1.95.0,<1.96"
 [tool.pixi.feature.tests.tasks]
 tests = { cmd = "pytest -v tests", description = "Run tests" }
 
-[tool.pixi.feature.tests.dependencies]
+# Use PyPI pytest to avoid Conda-only transitive dependencies leaking across the solve group.
+[tool.pixi.feature.tests.pypi-dependencies]
 pytest = "*"
 
 [tool.pixi.feature.profile.dependencies]
