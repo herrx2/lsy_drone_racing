@@ -29,7 +29,7 @@ dependencies = [
     "gymnasium[array-api] >= 1.2.0",
     "ml-collections >= 1.0",
     "packaging >= 24.0",
-    "crazyflow @ git+https://github.com/learnsyslab/crazyflow.git@d28ec70", # pin to >=0.3.3 once it is released
+    "crazyflow >= 0.4",
     "mujoco>=3.3.0,<3.11.0", # unlock the mujoco version when gymnasium side is repaired
     "jax >= 0.7",
     "warp-lang",
