@@ -1,13 +1,10 @@
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 import numpy as np
-import toppra as ta
-import toppra.algorithm as algo
-import toppra.constraint as constraint
 from crazyflow.sim.visualize import draw_line
+from scipy.interpolate import CubicSpline
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation
 
@@ -30,10 +27,24 @@ class MyController(Controller):
         self._freq = config.env.freq
 
         # Grenzen für die Trajektorie (pro Achse)
-        self.v_slow = 1.0  # [m/s] in der Nähe noch nicht gesehener Gates/Stangen
-        self.v_fast = 2.5  # [m/s] überall sonst
-        self.a_max = 2.0  # [m/s^2]
+        self.v_slow = 0.8  # [m/s] in der Nähe noch nicht gesehener Gates/Stangen
+        self.v_fast = 1.8  # [m/s] überall sonst
+        self.a_max =  1.8  # [m/s^2]
         self.r_pole = 0.3  # Mindestabstand der Bahn zu den Stangen [m]
+
+        # MPC: Punktmassen-Modell x = [p, v], u = a, Horizont N Schritte
+        self.mpc_n, dt = 20, 1.0 / self._freq
+        A = np.block([[np.eye(3), dt * np.eye(3)], [np.zeros((3, 3)), np.eye(3)]])
+        B = np.vstack([0.5 * dt**2 * np.eye(3), dt * np.eye(3)])
+        # Vorhersage aller Zustände: X = Phi @ x0 + Gam @ U
+        self._Phi = np.vstack([np.linalg.matrix_power(A, k + 1) for k in range(self.mpc_n)])
+        self._Gam = np.zeros((6 * self.mpc_n, 3 * self.mpc_n))
+        for k in range(self.mpc_n):
+            for j in range(k + 1):
+                self._Gam[6 * k:6 * k + 6, 3 * j:3 * j + 3] = np.linalg.matrix_power(A, k - j) @ B
+        Q = np.kron(np.eye(self.mpc_n), np.diag([100.0] * 3 + [10.0] * 3))  # Position/Geschw.
+        R = 0.1 * np.eye(3 * self.mpc_n)  # Beschleunigung
+        self._K = np.linalg.solve(self._Gam.T @ Q @ self._Gam + R, self._Gam.T @ Q)
 
         self._d = self._optimizing(obs)
         self._tick = 0
@@ -59,41 +70,41 @@ class MyController(Controller):
         waypoints.append(center + 1.0 * normal)  # Auslauf: durch das letzte Gate ohne zu bremsen
         return np.array(waypoints)
 
-    def _plan_trajectory(self, waypoints: np.ndarray, obs, v_start: float = 0.0, bc="not-a-knot"):
-        """Spline durch die Waypoints + zeitoptimales Geschwindigkeitsprofil."""
-        # 1. Pfad: Parameter s = aufsummierte Abstände (~ Bogenlänge)
+    def _plan_trajectory(self, waypoints: np.ndarray, obs, v_start=None) -> CubicSpline:
+        """Spline über die Zeit: Abschnittsdauer = Länge / Tempo, wo nötig gestreckt."""
         seg_len = np.linalg.norm(np.diff(waypoints, axis=0), axis=1)
-        s = np.r_[0.0, np.cumsum(seg_len)]
-        path = ta.SplineInterpolator(s, waypoints, bc_type=bc)
+        v_lim = self._speed_limit(waypoints, obs)
+        dt = np.maximum(seg_len / v_lim, 0.02)
+        start = np.zeros(3) if v_start is None else np.asarray(v_start, dtype=float)
+        bc = ((1, start), (1, np.zeros(3)))  # Start mit aktueller Geschwindigkeit, Ende in Ruhe
 
-        # 2. Grenzen: Geschwindigkeit (ortsabhängig) und Beschleunigung je Achse (x, y, z)
-        alim = np.array([[-self.a_max, self.a_max]] * 3)
-        constraints = [
-            self._speed_limit(path, obs),
-            constraint.JointAccelerationConstraint(alim),
-        ]
+        # Abschnitte, in denen Geschwindigkeit oder Beschleunigung zu groß ist, zeitlich strecken
+        # (Beschleunigung ~ 1/Dauer^2, Geschwindigkeit ~ 1/Dauer)
+        for _ in range(30):
+            t = np.r_[0.0, np.cumsum(dt)]
+            spline = CubicSpline(t, waypoints, bc_type=bc)
+            ts = np.linspace(0.0, t[-1], 20 * len(dt))
+            seg = np.clip(np.searchsorted(t, ts, side="right") - 1, 0, len(dt) - 1)
+            v_seg, a_seg = np.zeros(len(dt)), np.zeros(len(dt))
+            np.maximum.at(v_seg, seg, np.abs(spline(ts, 1)).max(axis=1))
+            np.maximum.at(a_seg, seg, np.abs(spline(ts, 2)).max(axis=1))
+            stretch = np.maximum(v_seg / v_lim, np.sqrt(a_seg / self.a_max))
+            if stretch.max() < 1.02:
+                break
+            dt *= np.clip(stretch, 1.0, 1.5)
+        return spline
 
-        # 3. Schnellstes Profil berechnen (Start mit v_start, Ende im Stillstand)
-        instance = algo.TOPPRA(constraints, path)
-        traj = instance.compute_trajectory(v_start, 0.0)
-        if traj is None:
-            raise RuntimeError("toppra hat keine Lösung gefunden")
-
-        return traj
-
-    def _speed_limit(self, path, obs):
-        """Langsam nur in der Nähe von Gates/Stangen, deren echte Lage noch unbekannt ist."""
+    def _speed_limit(self, waypoints: np.ndarray, obs) -> np.ndarray:
+        """Tempo pro Abschnitt: langsam nahe Gates/Stangen, deren echte Lage noch unbekannt ist."""
         unseen = np.r_[
             np.asarray(obs["gates_pos"])[~np.asarray(obs["gates_visited"], dtype=bool)],
             np.asarray(obs["obstacles_pos"])[~np.asarray(obs["obstacles_visited"], dtype=bool)],
         ][:, :2]
-
-        def vlim(s):
-            near = len(unseen) and np.linalg.norm(unseen - path(s)[:2], axis=1).min() < 0.8
-            v = self.v_slow if near else self.v_fast
-            return np.array([[-v, v]] * 3)
-
-        return constraint.JointVelocityConstraintVarying(vlim)
+        mid = 0.5 * (waypoints[:-1, :2] + waypoints[1:, :2])  # Mitte jedes Abschnitts
+        if len(unseen) == 0:
+            return np.full(len(mid), self.v_fast)
+        near = np.linalg.norm(mid[:, None] - unseen[None], axis=2).min(axis=1) < 0.8
+        return np.where(near, self.v_slow, self.v_fast)
 
     def _optimizing(self, obs) -> np.ndarray:
         """Abstand der Hilfspunkte pro Gate so wählen, dass die Trajektorie am kürzesten dauert."""
@@ -101,8 +112,8 @@ class MyController(Controller):
 
         def duration(d):
             try:
-                return self._plan_trajectory(self._waypoints(obs, d), obs).duration
-            except (RuntimeError, ValueError):
+                return self._plan_trajectory(self._waypoints(obs, d), obs).x[-1]
+            except ValueError:
                 return 1e3  # ungültige Wegpunkte bestrafen
 
         res = minimize(duration, np.full(n, 0.3), method="Powell", bounds=[(0.25, 0.5)] * n,
@@ -117,8 +128,8 @@ class MyController(Controller):
         if self._traj is None:  # Start
             pos, vel = np.asarray(obs["pos"], dtype=float), np.zeros(3)
         else:
-            t = min(self._tick / self._freq - self._t0, self._traj.duration)
-            pos, vel = self._traj.eval(t), self._traj.evald(t)
+            t = min(self._tick / self._freq - self._t0, self._traj.x[-1])
+            pos, vel = self._traj(t), self._traj(t, 1)
 
         # 1. Wegpunkte der noch offenen Gates (Vor-Punkt nur, wenn er noch vor uns liegt)
         wps = self._waypoints(obs, self._d)
@@ -181,28 +192,33 @@ class MyController(Controller):
             n = int(np.ceil(np.linalg.norm(b - a) / 0.3))
             dense += [a + (b - a) * i / n for i in range(1, n + 1)]
 
-        # 5. Trajektorie: startet in Flugrichtung mit aktueller Geschwindigkeit (notfalls langsamer)
-        speed = np.linalg.norm(vel)
-        bc = ((1, vel / speed), "not-a-knot") if speed > 0.1 else "not-a-knot"
-        for v_start in (speed, 0.5 * speed, 0.0):
-            try:
-                self._traj = self._plan_trajectory(np.array(dense), obs, v_start, bc)
-                self._t0 = self._tick / self._freq
-                return
-            except (RuntimeError, ValueError):
-                pass
+        # 5. Trajektorie: startet mit der aktuellen Geschwindigkeit
+        try:
+            self._traj = self._plan_trajectory(np.array(dense), obs, vel)
+            self._t0 = self._tick / self._freq
+        except ValueError:
+            pass  # (z.B. doppelte Punkte) -> alte Bahn weiterfliegen
+
+    def _mpc(self, pos, vel, t):
+        """Beschleunigung, mit der die Drohne in den nächsten 0.4 s der Spline am besten folgt."""
+        ts = np.minimum(t + np.arange(1, self.mpc_n + 1) / self._freq, self._traj.x[-1])
+        x_ref = np.hstack([self._traj(ts), self._traj(ts, 1)]).ravel()
+        x0 = np.r_[pos, vel]
+        u = self._K @ (x_ref - self._Phi @ x0)
+        return np.clip(u[:3], -self.a_max, self.a_max)  # nur der erste Schritt wird verwendet
 
     def compute_control(
         self, obs: dict[str, NDArray[np.floating]], info: dict | None = None
     ) -> NDArray[np.floating]:
         """Sollzustand aus der Trajektorie zur aktuellen Zeit."""
         t = self._tick / self._freq - self._t0
-        self._finished = t > self._traj.duration + 1.0  # 1 s Reserve, falls die Drohne nachhängt
-        t = min(t, self._traj.duration)
+        self._finished = t > self._traj.x[-1] + 1.0  # 1 s Reserve, falls die Drohne nachhängt
+        t = min(t, self._traj.x[-1])
 
-        pos = self._traj.eval(t)
-        vel = self._traj.evald(t)
-        acc = (self._traj.evaldd(t) + GRAVITY) / THRUST_SCALE - GRAVITY  # Schubskalierung ausgleichen
+        pos = self._traj(t)
+        vel = self._traj(t, 1)
+        acc = self._mpc(np.asarray(obs["pos"]), np.asarray(obs["vel"]), t)
+        acc = (acc + GRAVITY) / THRUST_SCALE - GRAVITY  # Schubskalierung ausgleichen
         quat = np.array([0.0, 0.0, 0.0, 1.0])  # Yaw = 0
         return np.concatenate((pos, vel, acc, quat, np.zeros(3)), dtype=np.float32)
 
@@ -229,5 +245,5 @@ class MyController(Controller):
 
     def render_callback(self, sim: Sim):
         """Geplante Trajektorie grün einzeichnen."""
-        t = np.linspace(0.0, self._traj.duration, 100)
-        draw_line(sim, self._traj.eval(t), rgba=(0.0, 1.0, 0.0, 1.0))
+        t = np.linspace(0.0, self._traj.x[-1], 100)
+        draw_line(sim, self._traj(t), rgba=(0.0, 1.0, 0.0, 1.0))
