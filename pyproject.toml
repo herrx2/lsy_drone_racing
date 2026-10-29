@@ -33,6 +33,7 @@ dependencies = [
     "mujoco>=3.3.0,<3.11.0", # unlock the mujoco version when gymnasium side is repaired
     "jax >= 0.7",
     "warp-lang",
+    "toppra",
 ]
 
 [project.optional-dependencies]
