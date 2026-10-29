@@ -26,3 +26,5 @@ ros_ws/build
 ros_ws/install
 ros_ws/log
 acados/
+
+./lsy_drone_racing/control/best_cont.py
