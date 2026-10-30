@@ -62,6 +62,7 @@ class MyController(Controller):
         self._known = np.r_[obs["gates_visited"], obs["obstacles_visited"]]
         self._finished = False
 
+
     def _waypoints(self, obs: dict, d: np.ndarray) -> np.ndarray:
         """Start, dann pro Gate: Punkt davor, Gate-Mitte, Punkt dahinter."""
         start_pos = np.asarray(obs["pos"], dtype=float)
