@@ -35,17 +35,34 @@ GRAVITY = np.array([0.0, 0.0, 9.81])
 # ---- Drohnenmodell (aus my_controller_2.py, im Crazyflow-Sim identifiziert) ----------------
 # Lage ohne Yaw über zwei Kippwinkel der Körper-z-Achse:
 # z = [sin(p) cos(r), -sin(r), cos(r) cos(p)].
-# Kipp-Antwort des Lagereglers an Bord: ddtilt = A * tilt + B * dtilt + C * tilt_cmd.
-MPC_A = -201.5
-MPC_B = -29.42
-MPC_C = 184.9
+# Lageregler an Bord (im Sim identifiziert), pro Kippachse mit Winkelbeschleunigung al:
+#   T = K1 * (tilt_cmd - tilt) + K2 * (rate_cmd - dtilt) - KD * al,  |T| <= AL_MAX
+#   dal = (T - al) / TAU_AL
+# Ohne Raten-Vorsteuerung dominiert die Dämpfung K2 (langsamer Pol K1 / K2 ~ 7 rad/s). Das MPC plant
+# deshalb T direkt und schickt Lage + Rate so, dass die innere Schleife genau diese Bahn abfährt.
+MPC_K1 = 800.0
+MPC_K2 = 117.0
+MPC_KD = 1.33
+MPC_AL_MAX = 170.0  # max. Winkelbeschleunigung [rad/s^2]
+MPC_TAU_AL = 0.051  # Rotor-Verzögerung [s]
+MPC_CMD_TILT_MAX = 1.3  # Grenze fürs gesendete Lagekommando [rad]
 MPC_MASS = 0.0434  # Nennmasse [kg] (zufällig +-0.005, fängt der Störgrößenbeobachter ab)
 MPC_KF = 0.978  # umgesetzter / kommandierter Gesamtschub
 MPC_TAU = 0.057  # Verzögerung des Schubs (1. Ordnung) [s]
-MPC_F_MAX = 0.66  # Schub-Kommando [N]: ~20 % Reserve, sonst gehen die Lagemomente verloren
+MPC_F_MAX = 0.74  # Schub-Kommando [N]; Reserve für die Lagemomente regelt die Sättigungsgrenze
 MPC_F_MIN = 0.15
-MPC_TILT_MAX = 0.9  # max. Kippwinkel [rad]
-MPC_RATE_MAX = np.array([20.0, 20.0, 15.0])  # max. Änderungsrate der Kommandos [rad/s, rad/s, N/s]
+MPC_F_ABS = 0.76  # oberste Schubgrenze auch für schwere Drohnen [N]; Motoren enden bei 0.8 N
+MPC_TILT_MAX = 1.0  # max. Gesamtneigung [rad]
+MPC_TILT_Z = 3000.0  # Strafe auf die Neigungsgrenze (linear, quadratisch x 100)
+MPC_TILT_LEAD = 0.08  # Neigungsgrenze gilt für tilt + LEAD * Kipprate (Bremsweg) [s]
+MPC_RESCUE_TILT = 1.3  # ab dieser Gesamtneigung MPC aussetzen und aufrichten [rad]
+# Motoren: Schub f / 4 +- Momentanteil muss in [THR_MIN, THR_MAX] bleiben, sonst geht das Moment
+# verloren und die Drohne kippt ungebremst weiter. T = 288 rad/s^2 entspricht 0.049 N pro Motor.
+MPC_THR_MAX = 0.2  # [N pro Motor]
+MPC_THR_MIN = 0.0214
+MPC_THR_PER_T = 0.049 / 288.0
+MPC_SAT_Z = 300.0  # Strafe auf die Sättigungsgrenze (linear, quadratisch x 10)
+MPC_DF_MAX = 15.0  # max. Änderungsrate des Schub-Kommandos [N/s]
 DRAG = np.array([0.0216, 0.0216, 0.0248]) / 0.0434  # lineare Luftreibung [1/s]
 # Schubpfad im Mellinger: F = mass_thrust / pwm_max * 4 * thrust_max * m_ctrl * |a_cmd + g|
 MELLINGER_F_PER_ACC = 132000.0 / 65535.0 * 0.8 * 0.0393
@@ -187,9 +204,9 @@ def _time_optimal(
                 v_n = ca.dot(v, rot[:, 0] * dirs[i])
                 opti.subject_to(
                     opti.bounded(
-                        -np.tan(cfg["approach_lat"]) * v_n,
+                        -np.tan(cfg["approach_lat"][i]) * v_n,
                         ca.dot(v, rot[:, 1]),
-                        np.tan(cfg["approach_lat"]) * v_n,
+                        np.tan(cfg["approach_lat"][i]) * v_n,
                     )
                 )
                 opti.subject_to(
@@ -204,10 +221,12 @@ def _time_optimal(
         # Segmentende = Durchflug durch Gate seq[i]
         rot = gates_rot[seq[i]]
         nrm, gy, gz = rot[:, 0] * dirs[i], rot[:, 1], rot[:, 2]
-        rel = xs[i][0:3, n] - (gates_pos[seq[i]] - 0.02 * gz)  # Kollisionskugel sitzt 2 cm höher
+        rel = xs[i][0:3, n] - (gates_pos[seq[i]] + cfg["gate_z"] * gz)
         ve = xs[i][3:6, n]
         opti.subject_to(ca.dot(rel, nrm) == 0.0)
-        opti.subject_to(opti.bounded(-cfg["lat"], ca.dot(rel, gy), cfg["lat"]))
+        opti.subject_to(
+            opti.bounded(cfg["bias"][i] - cfg["lat"], ca.dot(rel, gy), cfg["bias"][i] + cfg["lat"])
+        )
         opti.subject_to(opti.bounded(-0.03, ca.dot(rel, gz), 0.03))
         opti.subject_to(ca.dot(ve, nrm) >= 0.0)
         opti.subject_to(ca.dot(ve, nrm) ** 2 >= cos_t2 * ca.sumsqr(ve))
@@ -260,7 +279,7 @@ _PLAN_CACHE = {}
 def _mpcc_model(name: str) -> AcadosModel:
     """Definiere das MPCC-Modell.
 
-    x = [p, tilt, v, dtilt, f, tilt_cmd, f_cmd, s, ds], u = [Kommando-Raten, dds].
+    x = [p, tilt, v, dtilt, al, f, f_cmd, s, ds], u = [T (2), Schub-Kommando-Rate, dds].
 
     Parameter pro Stufe: [Stör-Beschleunigung (3), Pfadpunkt (3), Tangente (3), s_lin, Tunnelradius,
     Tempolimit, Schubfaktor (geschätzt, fängt die zufällige Masse ab)].
@@ -268,8 +287,8 @@ def _mpcc_model(name: str) -> AcadosModel:
     """
     p, v = ca.SX.sym("p", 3), ca.SX.sym("v", 3)
     tilt, dtilt = ca.SX.sym("tilt", 2), ca.SX.sym("dtilt", 2)
-    f = ca.SX.sym("f")
-    cmd = ca.SX.sym("cmd", 3)
+    al = ca.SX.sym("al", 2)
+    f, f_cmd = ca.SX.sym("f"), ca.SX.sym("f_cmd")
     s, ds = ca.SX.sym("s"), ca.SX.sym("ds")
     u = ca.SX.sym("u", NU)
     par = ca.SX.sym("par", NP)
@@ -280,7 +299,6 @@ def _mpcc_model(name: str) -> AcadosModel:
     cp, sp = ca.cos(tilt[1]), ca.sin(tilt[1])
     z_body = ca.vertcat(sp * cr, -sr, cr * cp)
     acc = z_body * MPC_KF * kap * f / MPC_MASS - GRAVITY - DRAG * v + dist
-    ddtilt = MPC_A * tilt + MPC_B * dtilt + MPC_C * cmd[:2]
 
     # Fehler zum (linearisierten) Pfad: Lag = längs, Contour = quer
     e = p - (p_lin + t_lin * (s - s_lin))
@@ -289,17 +307,29 @@ def _mpcc_model(name: str) -> AcadosModel:
 
     model = AcadosModel()
     model.name = name
-    model.x = ca.vertcat(p, tilt, v, dtilt, f, cmd, s, ds)
+    model.x = ca.vertcat(p, tilt, v, dtilt, al, f, f_cmd, s, ds)
     model.u = u
     model.p = par
-    model.f_expl_expr = ca.vertcat(v, dtilt, acc, ddtilt, (cmd[2] - f) / MPC_TAU, u[:3], ds, u[3])
+    model.f_expl_expr = ca.vertcat(
+        v, dtilt, acc, al, (u[:2] - al) / MPC_TAU_AL, (f_cmd - f) / MPC_TAU, u[2], ds, u[3]
+    )
     model.cost_y_expr = ca.vertcat(e_con, e_lag, ds, dtilt, u)
     model.cost_y_expr_e = ca.vertcat(e_con, e_lag)
     # im Tunnel bleiben; echte Geschwindigkeit längs des Pfads begrenzen
     model.con_h_expr = ca.vertcat(
-        ca.sqrt(ca.dot(e_con, e_con) + 1e-6) - r_tun, ca.dot(t_lin, v) - v_lim
+        ca.sqrt(ca.dot(e_con, e_con) + 1e-6) - r_tun,
+        ca.dot(t_lin, v) - v_lim,
+        np.cos(MPC_TILT_MAX)
+        - ca.cos(tilt[0] + MPC_TILT_LEAD * dtilt[0]) * ca.cos(tilt[1] + MPC_TILT_LEAD * dtilt[1]),
     )
     model.con_h_expr_e = model.con_h_expr
+    # Reserve der Motoren (normiert auf 0.05 N): Moment und Gesamtschub teilen sich den Bereich
+    d_m = MPC_THR_PER_T * (ca.sqrt(u[0] ** 2 + 1.0) + ca.sqrt(u[1] ** 2 + 1.0))
+    model.con_h_expr = ca.vertcat(
+        model.con_h_expr_e,
+        (f_cmd / 4.0 + d_m - MPC_THR_MAX) / 0.05,
+        (MPC_THR_MIN - f_cmd / 4.0 + d_m) / 0.05,
+    )
     return model
 
 
@@ -314,7 +344,7 @@ def _mpcc_solver(
     tun_Z: float,
     z_min: float,
 ) -> AcadosOcpSolver:
-    """MPCC bauen."""
+    """MPCC bauen (oder aus dem Temp-Ordner laden). Schreibt nie ins Repo."""
     key = hashlib.sha1(
         repr(
             (
@@ -327,18 +357,20 @@ def _mpcc_solver(
                 tun_z,
                 tun_Z,
                 z_min,
-                MPC_A,
-                MPC_B,
-                MPC_C,
+                MPC_AL_MAX,
+                MPC_TAU_AL,
                 MPC_MASS,
                 MPC_KF,
                 MPC_TAU,
                 MPC_F_MAX,
                 MPC_F_MIN,
                 MPC_TILT_MAX,
-                MPC_RATE_MAX.tolist(),
+                MPC_TILT_Z,
+                MPC_TILT_LEAD,
+                MPC_DF_MAX,
                 DRAG.tolist(),
-                "mpcc_lintun_v6",
+                MPC_SAT_Z,
+                "mpcc_alpha_v4",
             )
         ).encode()
     ).hexdigest()[:10]
@@ -365,36 +397,34 @@ def _mpcc_solver(
     ocp.cost.yref_e = np.zeros(4)
     ocp.parameter_values = np.zeros(NP)
     ocp.constraints.x0 = np.zeros(NX)
-    ocp.constraints.lbu = np.r_[-MPC_RATE_MAX, -dds_max]
-    ocp.constraints.ubu = np.r_[MPC_RATE_MAX, dds_max]
+    ocp.constraints.lbu = np.array([-MPC_AL_MAX, -MPC_AL_MAX, -MPC_DF_MAX, -dds_max])
+    ocp.constraints.ubu = np.array([MPC_AL_MAX, MPC_AL_MAX, MPC_DF_MAX, dds_max])
     ocp.constraints.idxbu = np.arange(NU)
-    # Zustände: Höhe (weich), Kippwinkel (weich), Kommandos, Schub, Bahngeschwindigkeit (weich)
-    ocp.constraints.idxbx = np.array([2, 3, 4, 11, 12, 13, 15])
-    ocp.constraints.lbx = np.array(
-        [z_min, -MPC_TILT_MAX, -MPC_TILT_MAX, -MPC_TILT_MAX, -MPC_TILT_MAX, MPC_F_MIN, 0.0]
-    )
-    ocp.constraints.ubx = np.array(
-        [2.4, MPC_TILT_MAX, MPC_TILT_MAX, MPC_TILT_MAX, MPC_TILT_MAX, MPC_F_MAX, 10.0]
-    )
-    ocp.constraints.idxsbx = np.array([0, 1, 2, 6])
-    ocp.constraints.lh = np.array([-100.0, -100.0])
-    ocp.constraints.uh = np.array([0.0, 0.0])
-    ocp.constraints.idxsh = np.array([0, 1])
-    # Strafkosten der weichen Grenzen: [Boden, tilt, tilt, ds, Tunnel, Tempo]
-    ocp.cost.zl = ocp.cost.zu = np.array([2000.0, 100.0, 100.0, 100.0, tun_z, 1000.0])
-    ocp.cost.Zl = ocp.cost.Zu = np.array([2e5, 1000.0, 1000.0, 1000.0, tun_Z, 1e4])
+    # Zustände: Höhe (weich), Kippwinkel (weich), Schub-Kommando, Bahngeschwindigkeit (weich)
+    ocp.constraints.idxbx = np.array([2, 3, 4, 13, 15])
+    ocp.constraints.lbx = np.array([z_min, -MPC_TILT_MAX, -MPC_TILT_MAX, MPC_F_MIN, 0.0])
+    ocp.constraints.ubx = np.array([2.4, MPC_TILT_MAX, MPC_TILT_MAX, MPC_F_MAX, 10.0])
+    # Gesamtneigung zusätzlich zu den Einzelachsen: 0.9 rad pro Achse wären zusammen 68 Grad
+    ocp.constraints.idxsbx = np.array([0, 1, 2, 4])
+    ocp.constraints.lh = np.full(5, -100.0)
+    ocp.constraints.uh = np.zeros(5)
+    ocp.constraints.idxsh = np.arange(5)
+    # Strafkosten der weichen Grenzen:
+    # [Boden, tilt, tilt, ds, Tunnel, Tempo, Neigung, Sättigung (2)]
+    z_e = np.array([2000.0, 100.0, 100.0, 100.0, tun_z, 1000.0, MPC_TILT_Z])
+    z2_e = np.array([2e5, 1000.0, 1000.0, 1000.0, tun_Z, 1e4, 100 * MPC_TILT_Z])
+    ocp.cost.zl = ocp.cost.zu = np.r_[z_e, MPC_SAT_Z, MPC_SAT_Z]
+    ocp.cost.Zl = ocp.cost.Zu = np.r_[z2_e, 10 * MPC_SAT_Z, 10 * MPC_SAT_Z]
     # Gleiche Grenzen auch im letzten Knoten
     ocp.constraints.idxbx_e = ocp.constraints.idxbx.copy()
     ocp.constraints.lbx_e = ocp.constraints.lbx.copy()
     ocp.constraints.ubx_e = ocp.constraints.ubx.copy()
     ocp.constraints.idxsbx_e = ocp.constraints.idxsbx.copy()
-    ocp.constraints.lh_e = ocp.constraints.lh.copy()
-    ocp.constraints.uh_e = ocp.constraints.uh.copy()
-    ocp.constraints.idxsh_e = ocp.constraints.idxsh.copy()
-    ocp.cost.zl_e = ocp.cost.zl.copy()
-    ocp.cost.zu_e = ocp.cost.zu.copy()
-    ocp.cost.Zl_e = ocp.cost.Zl.copy()
-    ocp.cost.Zu_e = ocp.cost.Zu.copy()
+    ocp.constraints.lh_e = np.full(3, -100.0)
+    ocp.constraints.uh_e = np.zeros(3)
+    ocp.constraints.idxsh_e = np.arange(3)
+    ocp.cost.zl_e = ocp.cost.zu_e = z_e
+    ocp.cost.Zl_e = ocp.cost.Zu_e = z2_e
     opts = ocp.solver_options
     opts.qp_solver = "PARTIAL_CONDENSING_HPIPM"
     opts.hessian_approx = "GAUSS_NEWTON"
@@ -479,19 +509,26 @@ class MyController(Controller):
         # ---- Zeitoptimale Bahn ------------------------------------------------------------
         self.plan_n = 30  # Knoten pro Segment
         self.plan_t_max = 15.0  # Schubgrenze [m/s^2]
-        self.plan_tilt = 0.9  # max. Neigung [rad]
-        self.plan_jerk = 100.0  # max. Ruck pro Achse [m/s^3]
-        self.plan_theta = 0.5  # max. Winkel Flugrichtung <-> Gate-Normale beim Durchflug [rad]
-        self.plan_lat = 0.02  # Durchflugpunkt: max. seitlicher Abstand zur Gate-Mitte [m]
-        self.plan_r_pole = 0.25  # Abstand zur Stangenmitte [m]
-        self.plan_r_frame = 0.15  # Abstand zu den Rahmen-Kapseln [m]
+        self.plan_tilt = 1.0  # max. Neigung [rad]
+        self.plan_jerk = 150.0  # max. Ruck pro Achse [m/s^3]
+        self.plan_theta = 0.9  # max. Winkel Flugrichtung <-> Gate-Normale beim Durchflug [rad]
+        self.plan_lat = 0.03  # Durchflugpunkt: max. seitlicher Abstand zur Gate-Mitte [m]
+        self.plan_r_pole = 0.15  # Abstand zur Stangenmitte [m]
+        self.plan_r_frame = 0.10  # Abstand zu den Rahmen-Kapseln [m]
         self.plan_z_min = 0.15  # Mindesthöhe nach dem Start [m]
         self.plan_climb = 0.5  # Start: Höhe >= climb * horizontaler Abstand
-        self.v_unseen = 2.2  # Tempo vor noch unbekannten Gates [m/s]
+        # Tempo vor noch unbekannten Gates [m/s], pro Durchflug (0 = kein Limit)
+        self.v_unseen = (2.2, 4.0, 3.5, 2.2, 0.0)
         self.unseen_len = 0.7  # ... auf den letzten Metern vor dem Gate (Sensorreichweite)
         self.approach_len = 0.4  # Einflug-Kegel vor unbekannten Gates: Länge [m]
-        self.approach_lat = 0.5  # ... max. Winkel zur Gate-Achse seitlich [rad]
+        # ... max. Winkel zur Gate-Achse seitlich [rad], pro Durchflug
+        self.approach_lat = (0.5, 0.5, 0.5, 0.5, 0.5)
         self.approach_vert = 0.1  # ... und in der Höhe [rad]
+        # Durchflugpunkt seitlich versetzt (Gate-y) [m]: Gate 0 wird schräg angeflogen, die
+        # Korrektur hinkt dort immer in Richtung des linken Balkens hinterher
+        self.gate_bias = (0.05, 0.0, 0.0, 0.0, 0.0)
+        self.plan_via = {}  # Hilfspunkte der Startlösung: {Durchflug-Index: (x, y, z)}
+        self.gate_z = 0.01  # Durchflughöhe relativ zur Gate-Mitte [m]
         self.run_out = 1.0  # Auslauf hinter dem letzten Gate [m]
         # Startlösungen für den Planer: (Hilfspunkt-Abstand am Gate, Stangen-, Rahmenabstand)
         self.plan_starts = ((0.3, 0.25, 0.5), (0.5, 0.3, 0.5), (0.2, 0.35, 0.6))
@@ -500,7 +537,7 @@ class MyController(Controller):
         self.def_ds = 0.05  # Raster der Verformung [m]
         self.gate_rigid = 0.10  # Bereich um den Durchflug, der sich starr mit dem Gate bewegt [m]
         self.gate_tol = 0.04  # Gate-Verschiebung bis hierhin wird nicht nachgeführt [m]
-        self.push_pole = 0.25  # Bahn mindestens so weit von Stangen [m]
+        self.push_pole = 0.17  # Bahn mindestens so weit von Stangen [m]
         self.push_frame = 0.19  # ... und von den Rahmen-Kapselachsen (inkl. Rahmenbreite) [m]
 
         # ---- MPCC ---------------------------------------------------------------------------
@@ -511,16 +548,20 @@ class MyController(Controller):
         self.tunnel_min = 0.03
         self.margin = 0.02  # zusätzlicher Abstand zu Rahmen / Stangen [m]
         self.q_con = 3000.0  # Gewicht Querfehler
+        self.q_con_z = 3000.0  # ... davon in der Höhe (Drohne sackt in engen Kurven durch)
         self.q_lag = 1000.0  # Gewicht Längsfehler (hält s an der Drohne)
-        self.q_prog = 2.0  # Gewicht Fortschritt
-        self.ds_ref = 10.0  # "Ziel"-Bahngeschwindigkeit für den Fortschrittsterm
+        self.q_prog = 60.0  # Gewicht Fortschritt
+        self.q_rate = 0.5  # Gewicht Kipprate
+        self.q_al = 0.0005  # Gewicht Winkelbeschleunigung
+        self.ds_ref = 10.0  # Startwert des Fortschrittsterms (wird pro Stufe überschrieben)
+        self.ds_add = 0.3  # Fortschrittsterm: Soll-Tempo = Tempolimit + ds_add [m/s]
         self.dds_max = 30.0  # max. Bahnbeschleunigung im Modell [m/s^2]
         self.k_dist = 0.15  # Störgrößenbeobachter (pro Schritt)
         self.k_kap = 0.1  # Schätzung Schubfaktor (pro Schritt)
         self.dist_par = 0.3  # Anteil des Fehlers in Schubrichtung, der additiv bleibt
         self.dist_max = np.array([1.5, 1.5, 2.0])
         self.takeoff_height = 0.03  # darunter senkrechter Start (Mellinger, fester Schub) [m]
-        self.takeoff_f = 0.70  # Schub beim Start [N]
+        self.takeoff_f = 0.78  # Schub beim Start [N]
         self.takeoff_dz = 0.04  # Zustand bei der Übergabe an den MPCC: Höhe über Start [m]
         self.takeoff_vz = 0.6  # ... und Steiggeschwindigkeit [m/s] (Startpunkt des Plans)
         self.tun_z = 2000.0  # Strafe fürs Verlassen des Tunnels pro m (linear / quadratisch)
@@ -532,8 +573,18 @@ class MyController(Controller):
         self._speed_sum = 0.0
         self._speed_samples = 0
 
-        w = np.r_[[self.q_con] * 3, self.q_lag, self.q_prog, [0.5] * 2, [0.04] * 2, 0.1, 0.01]
-        w_e = np.r_[[self.q_con] * 3, self.q_lag]
+        w = np.r_[
+            self.q_con,
+            self.q_con,
+            self.q_con_z,
+            self.q_lag,
+            self.q_prog,
+            [self.q_rate] * 2,
+            [self.q_al] * 2,
+            0.1,
+            0.01,
+        ]
+        w_e = np.r_[self.q_con, self.q_con, self.q_con_z, self.q_lag]
         self._mpc = _mpcc_solver(
             self.mpc_n,
             1.0 / self._freq,
@@ -557,7 +608,8 @@ class MyController(Controller):
         self._dist = np.zeros(3)
         self._kap = 1.0
         self._f_est = 0.0
-        self._cmd = np.array([0.0, 0.0, MPC_F_MIN])
+        self._f_cmd = MPC_F_MIN
+        self._al = np.zeros(2)
         self._v_pred = None
         self._mpc_warm = False
         self._s = 0.0
@@ -584,8 +636,11 @@ class MyController(Controller):
         gates_pos = np.asarray(obs["gates_pos"], dtype=float)
         gates_rot = Rotation.from_quat(obs["gates_quat"]).as_matrix()
         waypoints, fixed = [start], [True]
-        for g, sgn in zip(self._seq, self._dirs):
+        for i, (g, sgn) in enumerate(zip(self._seq, self._dirs)):
             normal = gates_rot[g][:, 0] * sgn
+            if i in self.plan_via:
+                waypoints.append(np.array(self.plan_via[i], dtype=float))
+                fixed.append(True)
             waypoints += [gates_pos[g] - d * normal, gates_pos[g], gates_pos[g] + d * normal]
             fixed += [False, True, False]
         waypoints.append(waypoints[-1] + self.run_out * normal)
@@ -650,7 +705,7 @@ class MyController(Controller):
     # ==================================================================================
     # Nominale Bahn (zeitoptimal) + Verformung
     # ==================================================================================
-    def _plan_cfg(self) -> dict[str, int | float]:
+    def _plan_cfg(self) -> dict[str, int | float | tuple[float, ...]]:
         """Stelle die Parameter für die zeitoptimale Planung zusammen."""
         return {
             "n": self.plan_n,
@@ -667,6 +722,8 @@ class MyController(Controller):
             "approach_len": self.approach_len,
             "approach_lat": self.approach_lat,
             "approach_vert": self.approach_vert,
+            "bias": self.gate_bias,
+            "gate_z": self.gate_z,
             "takeoff_dz": self.takeoff_dz,
             "takeoff_vz": self.takeoff_vz,
         }
@@ -702,8 +759,8 @@ class MyController(Controller):
         # Gates, die beim Durchflug zum ersten Mal gesehen werden -> Tempolimit davor
         seen = np.asarray(obs["gates_visited"], dtype=bool).copy()
         unseen = []
-        for g in self._seq:
-            unseen.append(None if seen[g] or self.v_unseen <= 0 else self.v_unseen)
+        for i, g in enumerate(self._seq):
+            unseen.append(None if seen[g] or self.v_unseen[i] <= 0 else self.v_unseen[i])
             seen[g] = True
         key = hashlib.sha1(
             np.round(
@@ -717,7 +774,7 @@ class MyController(Controller):
                 ],
                 3,
             ).tobytes()
-            + repr((sorted(cfg.items()), self.plan_starts, "v4")).encode()
+            + repr((sorted(cfg.items()), self.plan_starts, self.plan_via, "v5")).encode()
         ).hexdigest()
         plan = _PLAN_CACHE.get(key)
         cache_file = os.path.join(tempfile.gettempdir(), f"lsy_my_topt_{key[:16]}.npz")
@@ -791,7 +848,7 @@ class MyController(Controller):
         self._q_nom = q
         self._v_nom = speed
         self._cross_k = np.clip(np.round(cross_s / self.def_ds).astype(int), 0, len(q) - 1)
-        self._unseen_seq = [u is not None for u in unseen]
+        self._unseen_seq = unseen
         self._disp = np.zeros_like(q)
         self._disp[0] = self._start - q[0]
         self._k_now = 0
@@ -829,17 +886,18 @@ class MyController(Controller):
         pin(0, self._start - q[0], hard)
         locked[0] = True
         n_r = int(round(self.gate_rigid / self.def_ds))
-        for g, k_c in zip(self._seq, self._cross_k):
+        for i, (g, k_c) in enumerate(zip(self._seq, self._cross_k)):
             r_rel = rot_new[g] @ self._plan_rot[g].T
             # voll mitbewegter Durchflugpunkt; Verschiebung innerhalb der Toleranz weglassen
             q_full = r_rel @ (q[k_c] - self._plan_gp[g]) + gp[g]
             loc0 = rot_new[g].T @ (q[k_c] - gp[g])  # unverschobener Punkt im neuen Gate
             loc_f = rot_new[g].T @ (q_full - gp[g])
+            b = self.gate_bias[i]
             loc_t = np.array(
                 [
                     loc_f[0],
-                    np.clip(loc0[1], -self.gate_tol, self.gate_tol),
-                    np.clip(loc0[2], -0.02 - self.gate_tol, -0.02 + self.gate_tol),
+                    np.clip(loc0[1], b - self.gate_tol, b + self.gate_tol),
+                    np.clip(loc0[2], self.gate_z - self.gate_tol, self.gate_z + self.gate_tol),
                 ]
             )
             delta = rot_new[g] @ (loc_t - loc_f)
@@ -952,8 +1010,8 @@ class MyController(Controller):
         cap = np.full(len(v_nom), 100.0)
         n_cap = int(round((self.unseen_len + 0.1) / self.def_ds))
         for i, (g, k_c) in enumerate(zip(self._seq, self._cross_k)):
-            if self._unseen_seq[i] and not visited[g]:
-                cap[max(k_c - n_cap, 0) : k_c + 1] = self.v_unseen
+            if self._unseen_seq[i] is not None and not visited[g]:
+                cap[max(k_c - n_cap, 0) : k_c + 1] = self._unseen_seq[i]
         v_lim = np.minimum(self.topt_vf * v_nom + 0.3, cap)
         vmax = np.minimum(self.v_max, np.interp(self._path.ss, self._path.knot_s, v_lim))
         self._vmax = vmax
@@ -967,23 +1025,19 @@ class MyController(Controller):
         v: NDArray[np.float64],
         quat: NDArray[np.float64],
         ang_vel: NDArray[np.float64],
-    ) -> NDArray[np.float64] | None:
+    ) -> tuple[NDArray[np.float64], float, NDArray[np.float64]] | None:
         """Berechne das MPCC-Kommando oder melde einen fehlgeschlagenen Solverlauf."""
         n, dt = self.mpc_n, 1.0 / self._freq
         path = self._path
         tilt, dtilt = _tilt_state(quat, ang_vel)
-        cmd0 = np.clip(
-            self._cmd,
-            [-MPC_TILT_MAX, -MPC_TILT_MAX, MPC_F_MIN],
-            [MPC_TILT_MAX, MPC_TILT_MAX, MPC_F_MAX],
-        )
+        f_cmd0 = float(np.clip(self._f_cmd, MPC_F_MIN, MPC_F_ABS))
         s0 = self._s
         ds0 = float(
             np.clip(
                 self._ds_pred[1] if self._mpc_warm else np.dot(v, path.tangent(s0)), 0.0, self.v_max
             )
         )
-        x0 = np.r_[p, tilt, v, dtilt, self._f_est, cmd0, s0, ds0]
+        x0 = np.r_[p, tilt, v, dtilt, self._al, self._f_est, f_cmd0, s0, ds0]
 
         sol = self._mpc
         xs = us = None
@@ -1010,27 +1064,21 @@ class MyController(Controller):
 
         sol.set(0, "lbx", x0)
         sol.set(0, "ubx", x0)
+        y_ref = np.zeros(4 + 1 + 2 + NU)
         for j in range(n + 1):
             sol.set(
                 j,
                 "p",
                 np.r_[self._dist, p_lin[j], t_lin[j], s_lin[j], r_tun[j], vmax[j], self._kap],
             )
+            if j < n:
+                y_ref[4] = vmax[j] + self.ds_add
+                sol.set(j, "yref", y_ref)
+        # Schubgrenze folgt dem Schubfaktor: schwere Drohnen bekommen dieselbe Beschleunigung
+        f_max = float(np.clip(MPC_F_MAX / self._kap, MPC_F_MAX, MPC_F_ABS))
         for j in range(1, n + 1):
             sol.constraints_set(
-                j,
-                "ubx",
-                np.array(
-                    [
-                        2.4,
-                        MPC_TILT_MAX,
-                        MPC_TILT_MAX,
-                        MPC_TILT_MAX,
-                        MPC_TILT_MAX,
-                        MPC_F_MAX,
-                        vmax[j],
-                    ]
-                ),
+                j, "ubx", np.array([2.4, MPC_TILT_MAX, MPC_TILT_MAX, f_max, vmax[j]])
             )
         if self._mpc_warm:  # letzte Lösung um einen Schritt verschieben
             for j in range(n):
@@ -1047,9 +1095,9 @@ class MyController(Controller):
                     p_lin[j],
                     tilt,
                     t_lin[j] * ds_guess[j],
-                    np.zeros(2),
+                    np.zeros(4),
                     self._f_est,
-                    cmd0,
+                    f_cmd0,
                     s_lin[j],
                     ds_guess[j],
                 ]
@@ -1072,20 +1120,31 @@ class MyController(Controller):
             return None
         self._mpc_warm = True
         self._v_pred = x1[5:8]
+        self._al = x1[10:12]
+        self._f_cmd = float(np.clip(x1[13], MPC_F_MIN, MPC_F_ABS))
         self._ds_pred = np.array([sol.get(j, "x")[15] for j in range(n + 1)])
-        return np.clip(
-            x1[11:14],
-            [-MPC_TILT_MAX, -MPC_TILT_MAX, MPC_F_MIN],
-            [MPC_TILT_MAX, MPC_TILT_MAX, MPC_F_MAX],
+        # Innere Schleife invertieren: Mitte des Regelintervalls ist der Bezugspunkt
+        u0 = sol.get(0, "u")
+        tilt_m = 0.5 * (tilt + x1[3:5])
+        rate_m = 0.5 * (dtilt + x1[8:10])
+        al_m = 0.5 * (x0[10:12] + x1[10:12])
+        tilt_cmd = np.clip(
+            tilt_m + (u0[:2] + MPC_KD * al_m) / MPC_K1, -MPC_CMD_TILT_MAX, MPC_CMD_TILT_MAX
         )
+        # Körperraten bei fester Gier aus den Kippraten (R = Ry(pitch) Rx(roll))
+        cr, sr = np.cos(tilt_m[0]), np.sin(tilt_m[0])
+        rate_b = np.array([rate_m[0], rate_m[1] * cr, -rate_m[1] * sr])
+        return tilt_cmd, self._f_cmd, rate_b
 
     @staticmethod
-    def _attitude_to_acc(u: NDArray[np.float64], quat: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Beschleunigungs-Sollwert, für den der Mellinger genau Lage/Schub u kommandiert."""
-        z_des = _tilt_axis(u[:2])
+    def _attitude_to_acc(
+        tilt_cmd: NDArray[np.float64], f_cmd: float, quat: NDArray[np.float64]
+    ) -> NDArray[np.float64]:
+        """Beschleunigungs-Sollwert, für den der Mellinger genau diese Lage + Schub kommandiert."""
+        z_des = _tilt_axis(tilt_cmd)
         z_cur = Rotation.from_quat(quat).apply([0.0, 0.0, 1.0])
         cos = max(float(z_des @ z_cur), 0.5)  # der Mellinger projiziert auf die aktuelle z-Achse
-        return u[2] / (MELLINGER_F_PER_ACC * cos) * z_des - GRAVITY
+        return f_cmd / (MELLINGER_F_PER_ACC * cos) * z_des - GRAVITY
 
     def _mellinger_cmd(
         self, p_ref: NDArray[np.float64], v_ref: NDArray[np.float64]
@@ -1094,7 +1153,8 @@ class MyController(Controller):
         acc_send = GRAVITY / THRUST_SCALE - GRAVITY
         f_cmd = float(np.clip(MELLINGER_F_PER_ACC * (acc_send + GRAVITY)[2], 0.0, MPC_F_MAX))
         self._f_est = f_cmd + (self._f_est - f_cmd) * np.exp(-1.0 / (self._freq * MPC_TAU))
-        self._cmd = np.array([0.0, 0.0, f_cmd])
+        self._f_cmd = f_cmd
+        self._al = np.zeros(2)
         return np.concatenate((p_ref, v_ref, acc_send, [0.0, 0.0, 0.0, 1.0], np.zeros(3))).astype(
             np.float32
         )
@@ -1119,8 +1179,26 @@ class MyController(Controller):
             f_cmd = self.takeoff_f
             acc = np.array([0.0, 0.0, f_cmd / MELLINGER_F_PER_ACC]) - GRAVITY
             self._f_est = f_cmd + (self._f_est - f_cmd) * np.exp(-1.0 / (self._freq * MPC_TAU))
-            self._cmd = np.array([0.0, 0.0, f_cmd])
+            self._f_cmd = f_cmd
             return np.concatenate((p, v, acc, [0.0, 0.0, 0.0, 1.0], np.zeros(3))).astype(np.float32)
+
+        z_up = float(Rotation.from_quat(quat).apply([0.0, 0.0, 1.0])[2])
+        if z_up < np.cos(MPC_RESCUE_TILT):  # Modell gilt hier nicht mehr: erst aufrichten
+            self._v_pred = None
+            self._mpc_warm = False
+            self._al = np.zeros(2)
+            self._f_cmd = 0.6
+            self._f_est = 0.6 + (self._f_est - 0.6) * np.exp(-1.0 / (self._freq * MPC_TAU))
+            # Höchstens 1 rad auf einmal: ab 90 Grad Lagefehler schaltet der Bordregler die
+            # Momente ab
+            z_cur = Rotation.from_quat(quat).apply([0.0, 0.0, 1.0])
+            ang = float(np.arccos(np.clip(z_up, -1.0, 1.0)))
+            z_des = (np.sin(ang - 1.0) * z_cur + np.sin(1.0) * np.array([0.0, 0.0, 1.0])) / max(
+                np.sin(ang), 0.1
+            )
+            z_des /= np.linalg.norm(z_des)
+            a = self._f_cmd / MELLINGER_F_PER_ACC * z_des - GRAVITY
+            return np.concatenate((p, v, a, [0.0, 0.0, 0.0, 1.0], np.zeros(3))).astype(np.float32)
 
         if self._v_pred is not None:
             # Beobachter: Fehler der Geschwindigkeitsvorhersage -> in Schubrichtung vor allem
@@ -1130,20 +1208,20 @@ class MyController(Controller):
             e_par = float(err @ z_b)
             a_thrust = MPC_KF * self._f_est / MPC_MASS
             self._kap = float(
-                np.clip(self._kap + self.k_kap * e_par / max(a_thrust, 3.0), 0.8, 1.25)
+                np.clip(self._kap + self.k_kap * e_par / max(a_thrust, 3.0), 0.88, 1.15)
             )
             err = err - (1.0 - self.dist_par) * e_par * z_b
             self._dist = np.clip(self._dist + self.k_dist * err, -self.dist_max, self.dist_max)
-        u0 = self._mpcc_control(p, v, quat, ang_vel)
-        if u0 is None:
+        res = self._mpcc_control(p, v, quat, ang_vel)
+        if res is None:
             self._v_pred = None
             t = self._path.tangent(self._s)
             return self._mellinger_cmd(self._path(self._s + 0.3), t * 1.0)
-        self._cmd = u0.copy()
-        self._f_est = u0[2] + (self._f_est - u0[2]) * np.exp(-1.0 / (self._freq * MPC_TAU))
-        a = self._attitude_to_acc(u0, quat)
+        tilt_cmd, f_cmd, rate_b = res
+        self._f_est = f_cmd + (self._f_est - f_cmd) * np.exp(-1.0 / (self._freq * MPC_TAU))
+        a = self._attitude_to_acc(tilt_cmd, f_cmd, quat)
         # Messwert als Sollzustand: der Mellinger setzt nur noch Lage/Schub um
-        return np.concatenate((p, v, a, [0.0, 0.0, 0.0, 1.0], np.zeros(3))).astype(np.float32)
+        return np.concatenate((p, v, a, [0.0, 0.0, 0.0, 1.0], rate_b)).astype(np.float32)
 
     def step_callback(
         self,
