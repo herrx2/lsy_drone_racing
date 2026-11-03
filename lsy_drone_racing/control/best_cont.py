@@ -1,4 +1,4 @@
-"""best controller: Zeitoptimale Bahn durch die Gates + MPCC (Fortschritt maximieren im Tunnel). """
+"""best controller: Zeitoptimale Bahn durch die Gates + MPCC (Fortschritt maximieren im Tunnel)."""
 
 from __future__ import annotations
 
