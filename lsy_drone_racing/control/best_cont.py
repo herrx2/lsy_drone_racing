@@ -86,7 +86,7 @@ GATE_CAPSULES = (
     ((0.0, 0.0, -0.36), (0.0, 0.0, -1.36), 0.07),
 )
 
-NX, NU, NP = 16, 4, 13  # MPCC: Zustände, Eingänge, Parameter pro Stufe
+NX, NU, NP = 16, 4, 23  # MPCC: Zustände, Eingänge, Parameter pro Stufe
 
 
 def _tilt_axis(tilt: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -294,6 +294,8 @@ def _mpcc_model(name: str) -> AcadosModel:
     par = ca.SX.sym("par", NP)
     dist, p_lin, t_lin, s_lin, r_tun, v_lim = par[0:3], par[3:6], par[6:9], par[9], par[10], par[11]
     kap = par[12]
+    # Gate-Öffnung (MPCC++): Mitte, Gate-y- und Gate-z-Achse, halbe Breite (groß = inaktiv)
+    g_c, g_y, g_z, g_w = par[13:16], par[16:19], par[19:22], par[22]
 
     cr, sr = ca.cos(tilt[0]), ca.sin(tilt[0])
     cp, sp = ca.cos(tilt[1]), ca.sin(tilt[1])
@@ -321,6 +323,8 @@ def _mpcc_model(name: str) -> AcadosModel:
         ca.dot(t_lin, v) - v_lim,
         np.cos(MPC_TILT_MAX)
         - ca.cos(tilt[0] + MPC_TILT_LEAD * dtilt[0]) * ca.cos(tilt[1] + MPC_TILT_LEAD * dtilt[1]),
+        ca.sqrt(ca.dot(p - g_c, g_y) ** 2 + 1e-6) - g_w,
+        ca.sqrt(ca.dot(p - g_c, g_z) ** 2 + 1e-6) - g_w,
     )
     model.con_h_expr_e = model.con_h_expr
     # Reserve der Motoren (normiert auf 0.05 N): Moment und Gesamtschub teilen sich den Bereich
@@ -370,7 +374,7 @@ def _mpcc_solver(
                 MPC_DF_MAX,
                 DRAG.tolist(),
                 MPC_SAT_Z,
-                "mpcc_alpha_v4",
+                "mpcc_gate_v5",
             )
         ).encode()
     ).hexdigest()[:10]
@@ -406,13 +410,13 @@ def _mpcc_solver(
     ocp.constraints.ubx = np.array([2.4, MPC_TILT_MAX, MPC_TILT_MAX, MPC_F_MAX, 10.0])
     # Gesamtneigung zusätzlich zu den Einzelachsen: 0.9 rad pro Achse wären zusammen 68 Grad
     ocp.constraints.idxsbx = np.array([0, 1, 2, 4])
-    ocp.constraints.lh = np.full(5, -100.0)
-    ocp.constraints.uh = np.zeros(5)
-    ocp.constraints.idxsh = np.arange(5)
+    ocp.constraints.lh = np.full(7, -100.0)
+    ocp.constraints.uh = np.zeros(7)
+    ocp.constraints.idxsh = np.arange(7)
     # Strafkosten der weichen Grenzen:
-    # [Boden, tilt, tilt, ds, Tunnel, Tempo, Neigung, Sättigung (2)]
-    z_e = np.array([2000.0, 100.0, 100.0, 100.0, tun_z, 1000.0, MPC_TILT_Z])
-    z2_e = np.array([2e5, 1000.0, 1000.0, 1000.0, tun_Z, 1e4, 100 * MPC_TILT_Z])
+    # [Boden, tilt, tilt, ds, Tunnel, Tempo, Neigung, Gate (2), Sättigung (2)]
+    z_e = np.array([2000.0, 100.0, 100.0, 100.0, tun_z, 1000.0, MPC_TILT_Z, tun_z, tun_z])
+    z2_e = np.array([2e5, 1000.0, 1000.0, 1000.0, tun_Z, 1e4, 100 * MPC_TILT_Z, tun_Z, tun_Z])
     ocp.cost.zl = ocp.cost.zu = np.r_[z_e, MPC_SAT_Z, MPC_SAT_Z]
     ocp.cost.Zl = ocp.cost.Zu = np.r_[z2_e, 10 * MPC_SAT_Z, 10 * MPC_SAT_Z]
     # Gleiche Grenzen auch im letzten Knoten
@@ -420,9 +424,9 @@ def _mpcc_solver(
     ocp.constraints.lbx_e = ocp.constraints.lbx.copy()
     ocp.constraints.ubx_e = ocp.constraints.ubx.copy()
     ocp.constraints.idxsbx_e = ocp.constraints.idxsbx.copy()
-    ocp.constraints.lh_e = np.full(3, -100.0)
-    ocp.constraints.uh_e = np.zeros(3)
-    ocp.constraints.idxsh_e = np.arange(3)
+    ocp.constraints.lh_e = np.full(5, -100.0)
+    ocp.constraints.uh_e = np.zeros(5)
+    ocp.constraints.idxsh_e = np.arange(5)
     ocp.cost.zl_e = ocp.cost.zu_e = z_e
     ocp.cost.Zl_e = ocp.cost.Zu_e = z2_e
     opts = ocp.solver_options
@@ -513,12 +517,12 @@ class MyController(Controller):
         self.plan_jerk = 150.0  # max. Ruck pro Achse [m/s^3]
         self.plan_theta = 0.9  # max. Winkel Flugrichtung <-> Gate-Normale beim Durchflug [rad]
         self.plan_lat = 0.03  # Durchflugpunkt: max. seitlicher Abstand zur Gate-Mitte [m]
-        self.plan_r_pole = 0.15  # Abstand zur Stangenmitte [m]
+        self.plan_r_pole = 0.20  # Abstand zur Stangenmitte [m]
         self.plan_r_frame = 0.10  # Abstand zu den Rahmen-Kapseln [m]
         self.plan_z_min = 0.15  # Mindesthöhe nach dem Start [m]
         self.plan_climb = 0.5  # Start: Höhe >= climb * horizontaler Abstand
         # Tempo vor noch unbekannten Gates [m/s], pro Durchflug (0 = kein Limit)
-        self.v_unseen = (2.2, 4.0, 3.5, 2.2, 0.0)
+        self.v_unseen = (2.2, 4.0, 3.5, 0.0, 0.0)
         self.unseen_len = 0.7  # ... auf den letzten Metern vor dem Gate (Sensorreichweite)
         self.approach_len = 0.4  # Einflug-Kegel vor unbekannten Gates: Länge [m]
         # ... max. Winkel zur Gate-Achse seitlich [rad], pro Durchflug
@@ -528,7 +532,7 @@ class MyController(Controller):
         # Korrektur hinkt dort immer in Richtung des linken Balkens hinterher
         self.gate_bias = (0.05, 0.0, 0.0, 0.0, 0.0)
         self.plan_via = {}  # Hilfspunkte der Startlösung: {Durchflug-Index: (x, y, z)}
-        self.gate_z = 0.01  # Durchflughöhe relativ zur Gate-Mitte [m]
+        self.gate_z = 0.03  # Durchflughöhe relativ zur Gate-Mitte [m]
         self.run_out = 1.0  # Auslauf hinter dem letzten Gate [m]
         # Startlösungen für den Planer: (Hilfspunkt-Abstand am Gate, Stangen-, Rahmenabstand)
         self.plan_starts = ((0.3, 0.25, 0.5), (0.5, 0.3, 0.5), (0.2, 0.35, 0.6))
@@ -537,7 +541,7 @@ class MyController(Controller):
         self.def_ds = 0.05  # Raster der Verformung [m]
         self.gate_rigid = 0.10  # Bereich um den Durchflug, der sich starr mit dem Gate bewegt [m]
         self.gate_tol = 0.04  # Gate-Verschiebung bis hierhin wird nicht nachgeführt [m]
-        self.push_pole = 0.17  # Bahn mindestens so weit von Stangen [m]
+        self.push_pole = 0.20  # Bahn mindestens so weit von Stangen [m]
         self.push_frame = 0.19  # ... und von den Rahmen-Kapselachsen (inkl. Rahmenbreite) [m]
 
         # ---- MPCC ---------------------------------------------------------------------------
@@ -547,6 +551,9 @@ class MyController(Controller):
         self.tunnel_max = 0.15  # max. Tunnelradius im freien Raum [m]
         self.tunnel_min = 0.03
         self.margin = 0.02  # zusätzlicher Abstand zu Rahmen / Stangen [m]
+        self.gate_w = 0.12  # Gate-Öffnung im MPCC: halbe Breite für die Drohnenmitte [m]
+        self.gate_win = 0.15  # ... gilt in diesem Bereich um den Durchflug (Bogenlänge) [m]
+        self.gate_tun = 0.10  # Tunnelradius dort mindestens [m]
         self.q_con = 3000.0  # Gewicht Querfehler
         self.q_con_z = 3000.0  # ... davon in der Höhe (Drohne sackt in engen Kurven durch)
         self.q_lag = 1000.0  # Gewicht Längsfehler (hält s an der Drohne)
@@ -554,13 +561,13 @@ class MyController(Controller):
         self.q_rate = 0.5  # Gewicht Kipprate
         self.q_al = 0.0005  # Gewicht Winkelbeschleunigung
         self.ds_ref = 10.0  # Startwert des Fortschrittsterms (wird pro Stufe überschrieben)
-        self.ds_add = 0.3  # Fortschrittsterm: Soll-Tempo = Tempolimit + ds_add [m/s]
+        self.ds_add = 0.5  # Fortschrittsterm: Soll-Tempo = Tempolimit + ds_add [m/s]
         self.dds_max = 30.0  # max. Bahnbeschleunigung im Modell [m/s^2]
         self.k_dist = 0.15  # Störgrößenbeobachter (pro Schritt)
         self.k_kap = 0.1  # Schätzung Schubfaktor (pro Schritt)
         self.dist_par = 0.3  # Anteil des Fehlers in Schubrichtung, der additiv bleibt
         self.dist_max = np.array([1.5, 1.5, 2.0])
-        self.takeoff_height = 0.03  # darunter senkrechter Start (Mellinger, fester Schub) [m]
+        self.takeoff_height = 0.015  # darunter senkrechter Start (Mellinger, fester Schub) [m]
         self.takeoff_f = 0.78  # Schub beim Start [N]
         self.takeoff_dz = 0.04  # Zustand bei der Übergabe an den MPCC: Höhe über Start [m]
         self.takeoff_vz = 0.6  # ... und Steiggeschwindigkeit [m/s] (Startpunkt des Plans)
@@ -604,6 +611,15 @@ class MyController(Controller):
         self._seq = np.asarray(obs["gate_sequence"], dtype=int)
         self._dirs = np.asarray(obs["gate_sequence_direction"], dtype=float)
         self._start = np.asarray(obs["pos"], dtype=float).copy()
+        # Der Plan wird im Cache für alle Läufe geteilt: deshalb ab der nominalen Startposition
+        # planen (sonst bestimmt die zufällige Startposition des ersten Laufs den Plan für alle)
+        self.plan_start_fix = None  # fester Startpunkt des Plans (sonst nominal aus der Config)
+        try:
+            self._plan_start = np.asarray(config.env.track.drones[0]["pos"], dtype=float)
+            if self.plan_start_fix is not None:
+                self._plan_start = np.asarray(self.plan_start_fix, dtype=float)
+        except (AttributeError, IndexError, KeyError, TypeError):
+            self._plan_start = self._start.copy()
         self._airborne = False
         self._dist = np.zeros(3)
         self._kap = 1.0
@@ -735,7 +751,7 @@ class MyController(Controller):
         gates_pos = np.asarray(obs["gates_pos"], dtype=float)
         gates_rot = Rotation.from_quat(obs["gates_quat"]).as_matrix()
         try:
-            geo = PathGeo(self._guess_waypoints(obs, self._start, d, r_pole, r_frame))
+            geo = PathGeo(self._guess_waypoints(obs, self._plan_start, d, r_pole, r_frame))
             bounds, i0 = [0.0], 0
             for g, sgn in zip(self._seq, self._dirs):
                 loc = (geo.pts[i0:] - gates_pos[g]) @ (gates_rot[g][:, 0] * sgn)
@@ -774,7 +790,15 @@ class MyController(Controller):
                 ],
                 3,
             ).tobytes()
-            + repr((sorted(cfg.items()), self.plan_starts, self.plan_via, "v5")).encode()
+            + repr(
+                (
+                    sorted(cfg.items()),
+                    self.plan_starts,
+                    self.plan_via,
+                    self._plan_start.round(3).tolist(),
+                    "v6",
+                )
+            ).encode()
         ).hexdigest()
         plan = _PLAN_CACHE.get(key)
         cache_file = os.path.join(tempfile.gettempdir(), f"lsy_my_topt_{key[:16]}.npz")
@@ -790,7 +814,7 @@ class MyController(Controller):
                 if guess is None:
                     continue
                 # Plan beginnt dort, wo der senkrechte Start an den MPCC übergibt
-                p0 = self._start + np.array([0.0, 0.0, self.takeoff_dz])
+                p0 = self._plan_start + np.array([0.0, 0.0, self.takeoff_dz])
                 res = _time_optimal(
                     p0,
                     np.array([0.0, 0.0, self.takeoff_vz]),
@@ -1002,6 +1026,10 @@ class MyController(Controller):
             d_frame - DRONE_RADIUS - self.margin, d_pole - POLE_RADIUS - DRONE_RADIUS - self.margin
         )
         self._tunnel = np.clip(r, self.tunnel_min, self.tunnel_max)
+        # Durchflüge auf diesem Pfad (Bogenlänge, Gate) für die Gate-Grenze im MPCC
+        self._gate_s = np.array([self._path.knot_s[k] for k in self._cross_k])
+        self._gate_ids = list(self._seq)
+        self._gates_now = (gates_pos.copy(), gates_rot.copy())
 
         # Tempolimit aus dem zeitoptimalen Profil
         v_nom = self._v_nom
@@ -1061,6 +1089,15 @@ class MyController(Controller):
         nxt = np.minimum(idx + 1, len(path.ss) - 1)
         r_tun = np.minimum(self._tunnel[idx], self._tunnel[nxt])
         vmax = np.minimum(self._vmax[idx], self._vmax[nxt])
+        # Gate-Öffnung statt Tunnel in der Nähe der Durchflüge
+        gate_par = np.tile(np.r_[np.zeros(3), 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 10.0], (n + 1, 1))
+        g_pos, g_rot = self._gates_now
+        for s_c, g in zip(self._gate_s, self._gate_ids):
+            act = np.abs(s_lin - s_c) < self.gate_win
+            if np.any(act):
+                c = g_pos[g] - np.array([0.0, 0.0, 0.02])  # Kollisionskugel sitzt 2 cm höher
+                gate_par[act] = np.r_[c, g_rot[g][:, 1], g_rot[g][:, 2], self.gate_w]
+                r_tun[act] = np.maximum(r_tun[act], self.gate_tun)
 
         sol.set(0, "lbx", x0)
         sol.set(0, "ubx", x0)
@@ -1069,7 +1106,16 @@ class MyController(Controller):
             sol.set(
                 j,
                 "p",
-                np.r_[self._dist, p_lin[j], t_lin[j], s_lin[j], r_tun[j], vmax[j], self._kap],
+                np.r_[
+                    self._dist,
+                    p_lin[j],
+                    t_lin[j],
+                    s_lin[j],
+                    r_tun[j],
+                    vmax[j],
+                    self._kap,
+                    gate_par[j],
+                ],
             )
             if j < n:
                 y_ref[4] = vmax[j] + self.ds_add
