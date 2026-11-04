@@ -52,7 +52,7 @@ MPC_TAU = 0.057  # Verzögerung des Schubs (1. Ordnung) [s]
 MPC_F_MAX = 0.74  # Schub-Kommando [N]; Reserve für die Lagemomente regelt die Sättigungsgrenze
 MPC_F_MIN = 0.15
 MPC_F_ABS = 0.76  # oberste Schubgrenze auch für schwere Drohnen [N]; Motoren enden bei 0.8 N
-MPC_TILT_MAX = 1.0  # max. Gesamtneigung [rad]
+MPC_TILT_MAX = 1.14  # max. Gesamtneigung [rad]
 MPC_TILT_Z = 3000.0  # Strafe auf die Neigungsgrenze (linear, quadratisch x 100)
 MPC_TILT_LEAD = 0.08  # Neigungsgrenze gilt für tilt + LEAD * Kipprate (Bremsweg) [s]
 MPC_RESCUE_TILT = 1.3  # ab dieser Gesamtneigung MPC aussetzen und aufrichten [rad]
@@ -512,17 +512,17 @@ class MyController(Controller):
 
         # ---- Zeitoptimale Bahn ------------------------------------------------------------
         self.plan_n = 30  # Knoten pro Segment
-        self.plan_t_max = 15.0  # Schubgrenze [m/s^2]
-        self.plan_tilt = 1.0  # max. Neigung [rad]
+        self.plan_t_max = 15.1  # Schubgrenze [m/s^2]
+        self.plan_tilt = 0.982  # max. Neigung [rad]
         self.plan_jerk = 150.0  # max. Ruck pro Achse [m/s^3]
-        self.plan_theta = 0.9  # max. Winkel Flugrichtung <-> Gate-Normale beim Durchflug [rad]
+        self.plan_theta = 1.077  # max. Winkel Flugrichtung <-> Gate-Normale beim Durchflug [rad]
         self.plan_lat = 0.03  # Durchflugpunkt: max. seitlicher Abstand zur Gate-Mitte [m]
-        self.plan_r_pole = 0.20  # Abstand zur Stangenmitte [m]
+        self.plan_r_pole = 0.165  # Abstand zur Stangenmitte [m]
         self.plan_r_frame = 0.10  # Abstand zu den Rahmen-Kapseln [m]
         self.plan_z_min = 0.15  # Mindesthöhe nach dem Start [m]
         self.plan_climb = 0.5  # Start: Höhe >= climb * horizontaler Abstand
         # Tempo vor noch unbekannten Gates [m/s], pro Durchflug (0 = kein Limit)
-        self.v_unseen = (2.2, 4.0, 3.5, 0.0, 0.0)
+        self.v_unseen = (2.57, 4.0, 3.5, 3.24, 0.0)
         self.unseen_len = 0.7  # ... auf den letzten Metern vor dem Gate (Sensorreichweite)
         self.approach_len = 0.4  # Einflug-Kegel vor unbekannten Gates: Länge [m]
         # ... max. Winkel zur Gate-Achse seitlich [rad], pro Durchflug
@@ -530,9 +530,9 @@ class MyController(Controller):
         self.approach_vert = 0.1  # ... und in der Höhe [rad]
         # Durchflugpunkt seitlich versetzt (Gate-y) [m]: Gate 0 wird schräg angeflogen, die
         # Korrektur hinkt dort immer in Richtung des linken Balkens hinterher
-        self.gate_bias = (0.05, 0.0, 0.0, 0.0, 0.0)
+        self.gate_bias = (0.078, 0.0, 0.0, 0.0, 0.0)
         self.plan_via = {}  # Hilfspunkte der Startlösung: {Durchflug-Index: (x, y, z)}
-        self.gate_z = 0.03  # Durchflughöhe relativ zur Gate-Mitte [m]
+        self.gate_z = 0.05  # Durchflughöhe relativ zur Gate-Mitte [m]
         self.run_out = 1.0  # Auslauf hinter dem letzten Gate [m]
         # Startlösungen für den Planer: (Hilfspunkt-Abstand am Gate, Stangen-, Rahmenabstand)
         self.plan_starts = ((0.3, 0.25, 0.5), (0.5, 0.3, 0.5), (0.2, 0.35, 0.6))
@@ -541,33 +541,33 @@ class MyController(Controller):
         self.def_ds = 0.05  # Raster der Verformung [m]
         self.gate_rigid = 0.10  # Bereich um den Durchflug, der sich starr mit dem Gate bewegt [m]
         self.gate_tol = 0.04  # Gate-Verschiebung bis hierhin wird nicht nachgeführt [m]
-        self.push_pole = 0.20  # Bahn mindestens so weit von Stangen [m]
+        self.push_pole = 0.165  # Bahn mindestens so weit von Stangen [m]
         self.push_frame = 0.19  # ... und von den Rahmen-Kapselachsen (inkl. Rahmenbreite) [m]
 
         # ---- MPCC ---------------------------------------------------------------------------
         self.mpc_n = 40  # Horizont (40 x 20 ms = 0.8 s)
-        self.v_max = 10.0  # max. Bahngeschwindigkeit [m/s]
-        self.topt_vf = 0.9  # Tempolimit = topt_vf * zeitoptimales Profil + 0.3 m/s
+        self.v_max = 7.0  # max. Bahngeschwindigkeit [m/s]
+        self.topt_vf = 0.876  # Tempolimit = topt_vf * zeitoptimales Profil + 0.3 m/s
         self.tunnel_max = 0.15  # max. Tunnelradius im freien Raum [m]
         self.tunnel_min = 0.03
         self.margin = 0.02  # zusätzlicher Abstand zu Rahmen / Stangen [m]
-        self.gate_w = 0.12  # Gate-Öffnung im MPCC: halbe Breite für die Drohnenmitte [m]
+        self.gate_w = 0.106  # Gate-Öffnung im MPCC: halbe Breite für die Drohnenmitte [m]
         self.gate_win = 0.15  # ... gilt in diesem Bereich um den Durchflug (Bogenlänge) [m]
         self.gate_tun = 0.10  # Tunnelradius dort mindestens [m]
-        self.q_con = 3000.0  # Gewicht Querfehler
+        self.q_con = 2250.0  # Gewicht Querfehler
         self.q_con_z = 3000.0  # ... davon in der Höhe (Drohne sackt in engen Kurven durch)
         self.q_lag = 1000.0  # Gewicht Längsfehler (hält s an der Drohne)
-        self.q_prog = 60.0  # Gewicht Fortschritt
+        self.q_prog = 40.0  # Gewicht Fortschritt
         self.q_rate = 0.5  # Gewicht Kipprate
         self.q_al = 0.0005  # Gewicht Winkelbeschleunigung
         self.ds_ref = 10.0  # Startwert des Fortschrittsterms (wird pro Stufe überschrieben)
-        self.ds_add = 0.5  # Fortschrittsterm: Soll-Tempo = Tempolimit + ds_add [m/s]
+        self.ds_add = 0.29  # Fortschrittsterm: Soll-Tempo = Tempolimit + ds_add [m/s]
         self.dds_max = 30.0  # max. Bahnbeschleunigung im Modell [m/s^2]
         self.k_dist = 0.15  # Störgrößenbeobachter (pro Schritt)
         self.k_kap = 0.1  # Schätzung Schubfaktor (pro Schritt)
         self.dist_par = 0.3  # Anteil des Fehlers in Schubrichtung, der additiv bleibt
         self.dist_max = np.array([1.5, 1.5, 2.0])
-        self.takeoff_height = 0.015  # darunter senkrechter Start (Mellinger, fester Schub) [m]
+        self.takeoff_height = 0.004  # darunter senkrechter Start (Mellinger, fester Schub) [m]
         self.takeoff_f = 0.78  # Schub beim Start [N]
         self.takeoff_dz = 0.04  # Zustand bei der Übergabe an den MPCC: Höhe über Start [m]
         self.takeoff_vz = 0.6  # ... und Steiggeschwindigkeit [m/s] (Startpunkt des Plans)
