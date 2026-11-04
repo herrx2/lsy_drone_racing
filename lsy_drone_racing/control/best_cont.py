@@ -546,7 +546,7 @@ class MyController(Controller):
 
         # ---- MPCC ---------------------------------------------------------------------------
         self.mpc_n = 40  # Horizont (40 x 20 ms = 0.8 s)
-        self.v_max = 10.0  # max. Bahngeschwindigkeit [m/s]
+        self.v_max = 9.0  # max. Bahngeschwindigkeit [m/s]
         self.topt_vf = 0.9  # Tempolimit = topt_vf * zeitoptimales Profil + 0.3 m/s
         self.tunnel_max = 0.15  # max. Tunnelradius im freien Raum [m]
         self.tunnel_min = 0.03
