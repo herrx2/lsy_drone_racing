@@ -522,7 +522,7 @@ class MyController(Controller):
         self.plan_z_min = 0.15  # Mindesthöhe nach dem Start [m]
         self.plan_climb = 0.5  # Start: Höhe >= climb * horizontaler Abstand
         # Tempo vor noch unbekannten Gates [m/s], pro Durchflug (0 = kein Limit)
-        self.v_unseen = (2.57, 4.0, 3.5, 3.24, 0.0)
+        self.v_unseen = (2.2, 3.2, 2.8, 2.7, 0.0)
         self.unseen_len = 0.7  # ... auf den letzten Metern vor dem Gate (Sensorreichweite)
         self.approach_len = 0.4  # Einflug-Kegel vor unbekannten Gates: Länge [m]
         # ... max. Winkel zur Gate-Achse seitlich [rad], pro Durchflug
@@ -546,12 +546,12 @@ class MyController(Controller):
 
         # ---- MPCC ---------------------------------------------------------------------------
         self.mpc_n = 40  # Horizont (40 x 20 ms = 0.8 s)
-        self.v_max = 9.0  # max. Bahngeschwindigkeit [m/s]
-        self.topt_vf = 0.9  # Tempolimit = topt_vf * zeitoptimales Profil + 0.3 m/s
+        self.v_max = 4.0  # max. Bahngeschwindigkeit [m/s]
+        self.topt_vf = 0.7  # Tempolimit = topt_vf * zeitoptimales Profil + 0.3 m/s
         self.tunnel_max = 0.15  # max. Tunnelradius im freien Raum [m]
         self.tunnel_min = 0.03
         self.margin = 0.02  # zusätzlicher Abstand zu Rahmen / Stangen [m]
-        self.gate_w = 0.106  # Gate-Öffnung im MPCC: halbe Breite für die Drohnenmitte [m]
+        self.gate_w = 0.09  # Gate-Öffnung im MPCC: halbe Breite für die Drohnenmitte [m]
         self.gate_win = 0.15  # ... gilt in diesem Bereich um den Durchflug (Bogenlänge) [m]
         self.gate_tun = 0.10  # Tunnelradius dort mindestens [m]
         self.q_con = 2250.0  # Gewicht Querfehler
