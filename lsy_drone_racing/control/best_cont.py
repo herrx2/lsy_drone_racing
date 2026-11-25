@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 import casadi as ca
 import numpy as np
 from acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver
+from acados_template.builders import ocp_get_default_cmake_builder
 from scipy.integrate import cumulative_trapezoid
 from scipy.interpolate import CubicSpline
 from scipy.linalg import solveh_banded
@@ -381,7 +382,10 @@ def _mpcc_solver(
     name = f"lsy_my_mpcc_{key}"
     root = os.path.join(tempfile.gettempdir(), name)
     json_file = os.path.join(root, "ocp.json")
-    lib = os.path.join(root, "c_generated_code", f"libacados_ocp_solver_{name}.so")
+    if os.name == "nt":  # Windows: acados baut die DLL per CMake/MinGW (wie in attitude_mpc.py)
+        lib = os.path.join(root, "c_generated_code", f"acados_ocp_solver_{name}.dll")
+    else:
+        lib = os.path.join(root, "c_generated_code", f"libacados_ocp_solver_{name}.so")
     if os.path.exists(json_file) and os.path.exists(lib):
         return AcadosOcpSolver(
             None, json_file=json_file, build=False, generate=False, verbose=False
@@ -439,7 +443,12 @@ def _mpcc_solver(
     opts.qp_solver_iter_max = 50
     opts.qp_solver_warm_start = 1
     os.makedirs(root, exist_ok=True)
-    return AcadosOcpSolver(ocp, json_file=json_file, verbose=False)
+    cmake_builder = None
+    if os.name == "nt":
+        cmake_builder = ocp_get_default_cmake_builder()
+        cmake_builder.generator = "MinGW Makefiles"
+        cmake_builder.build_dir = "build-mingw"
+    return AcadosOcpSolver(ocp, json_file=json_file, verbose=False, cmake_builder=cmake_builder)
 
 
 class PathGeo:
