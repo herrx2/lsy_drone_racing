@@ -11,9 +11,9 @@ Aufruf aus dem Repo-Root (in der pixi-Umgebung):
 Pro Lauf eine JSON-Zeile, am Ende SUMMARY und CAUSES.
 """
 
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
 
-import lsy_drone_racing  # noqa: F401, I001  (muss vor scipy importiert werden)
+import lsy_drone_racing  # noqa: F401  (must be imported before scipy)
 
 import contextlib
 import io
@@ -81,9 +81,9 @@ def main(
         )
     )
     a, b = map(int, str(seeds).split(":"))
-    nom_g = np.array([g["pos"] for g in cfg.env.track.gates])
-    nom_o = np.array([o["pos"] for o in cfg.env.track.obstacles])
-    quiet_ctx = (lambda: contextlib.redirect_stdout(io.StringIO())) if quiet else contextlib.nullcontext
+    quiet_ctx = (
+        (lambda: contextlib.redirect_stdout(io.StringIO())) if quiet else contextlib.nullcontext
+    )
     results = []
     for seed in range(a, b):
         obs, info = env.reset(seed=seed) if seeded else env.reset()  # ungeseedet wie sim.py
@@ -92,6 +92,8 @@ def main(
         true_q = np.asarray(u.data.gates_quat)[0]
         true_rot = R.from_quat(true_q).as_matrix()
         true_o = np.asarray(u.data.obstacles_pos)[0]
+        nom_g = np.asarray(u.data.nominal_gates_pos)[0]  # level 3: the sampled track
+        nom_o = np.asarray(u.data.nominal_obstacles_pos)[0]
         with quiet_ctx():
             ctrl = Ctrl(obs, info, cfg)
         err, known_at, i = [], {}, 0
@@ -150,11 +152,19 @@ def main(
             "ok": bool(ok),
             "t": i / cfg.env.freq,
             "gates": ngp,
+            "fallback": getattr(ctrl, "_plan_fallback", None),
+            "relaxed": getattr(ctrl, "_plan_relaxed", None),
+            "plan_s": round(float(getattr(ctrl, "_plan_time", 0.0)), 1),
+            "solve_p95_ms": round(float(np.percentile(ctrl._solve_ms, 95)), 1)
+            if getattr(ctrl, "_solve_ms", None)
+            else None,
             "cause": cause,
             "pos": np.round(p, 2).tolist(),
             "speed": round(float(np.linalg.norm(v)), 2),
             **extra,
-            "gate_off_cm": np.round(100 * np.linalg.norm(true_g - nom_g, axis=1)).astype(int).tolist(),
+            "gate_off_cm": np.round(100 * np.linalg.norm(true_g - nom_g, axis=1))
+            .astype(int)
+            .tolist(),
             "obst_off_cm": np.round(100 * np.linalg.norm((true_o - nom_o)[:, :2], axis=1))
             .astype(int)
             .tolist(),
